@@ -63,6 +63,8 @@ enum fixed_identities {
 	SYS_NAMES = 0, SYS_DEV, SYS_STATE, F_INIT, F_TOSTRING, F_MSG_HANDLER
 };
 
+typedef ushort segment;
+
 #define OID_HIGH_SIZE 4
 typedef struct {
 	segment _low;

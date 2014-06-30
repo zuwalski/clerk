@@ -19,7 +19,6 @@
 #include <string.h>
 
 #include "cle_struct.h"
-#include "../test_clerk/test.h"
 
 /* mem-manager */
 // TODO: call external allocator
@@ -174,17 +173,6 @@ page* _tk_write_copy(task* t, page* pg) {
 key* _tk_get_ptr(task* t, page** pg, key* me) {
 	ptr* pt = (ptr*) me;
 	if (pt->koffset != 0) {
-        
-        // DEBUG
-        if(pt->koffset == 1){
-            st_ptr root;
-            root.pg = *pg;
-            root.key = sizeof(page);
-            root.offset = 0;
-            st_prt_page(&root);
-        }
-        
-        
 		*pg = (page*) pt->pg;
 		me = GOKEY(*pg,pt->koffset); /* points to a key - not an ovf-ptr */
 	} else {
@@ -268,22 +256,12 @@ void tk_dup_ptr(st_ptr* to, st_ptr* from) {
 	tk_ref_ptr(to);
 }
 
-ushort tk_segment(task* t) {
-	return t->segment;
-}
-
-segment tk_new_segment(task* t) {
-	cle_panic(t); // not impl yet - will delegate to pagesource
-	return 0;
-}
-
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data) {
 	// initial alloc
 	task* t = (task*) tk_malloc(0, sizeof(task));
 
 	t->stack = 0;
 	t->wpages = 0;
-	t->segment = 1; // TODO get from pager
 	t->ps = ps;
 	t->psrc_data = psrc_data;
 

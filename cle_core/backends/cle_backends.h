@@ -30,4 +30,17 @@ cle_psrc_data util_create_mempager();
 
 int mempager_get_pagecount(cle_psrc_data);
 
+void mempager_destroy(cle_psrc_data);
+
+// log-pager
+cle_pagesource util_memory_log;
+
+cle_psrc_data util_create_memlog();
+
+int memlog_get_pagecount(cle_psrc_data pd);
+
+int memlog_get_logcount(cle_psrc_data pd);
+
+void memlog_destroy(cle_psrc_data pd);
+
 #endif

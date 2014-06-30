@@ -667,37 +667,39 @@ void test_task_c() {
 	tk_drop_task(t);
 }
 
-void test_task_c_2() {
+void test_task_c_2a() {
 	clock_t start, stop;
-
+    
 	st_ptr root, tmp;
 	task* t;
 	it_ptr it;
 	int i;
-//	uchar keystore[1000];
+    //	uchar keystore[1000];
 	uchar keystore[100];
-
-	cle_pagesource* psource = &util_memory_pager;
+    
+    cont_fixed = 0;
+    cont_notfixed = 0;
+    max_notfixed = 0;
+    copy_calls = 0;
+	
+    cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
-
-	puts("\nRunning mempager: Multi-commit-test\n");
-	page_size = 0;
-	resize_count = 0;
-	overflow_size = 0;
-
+    
+	puts("\nRunning mempager: 1-commit-test\n");
+    
 	start = clock();
 	//  new task
 	t = tk_create_task(psource, pdata);
-
+    
 	// set pagesource-root
 	tk_root_ptr(t, &root);
-
+    
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		tmp = root;
 		memcpy(keystore, (char* )&i, sizeof(int));
 		st_insert(t, &tmp, (cdat) keystore, sizeof(keystore));
 	}
-
+    
 	stop = clock();
     
 	printf("1-commit insert-time %lu\n", stop - start);
@@ -711,26 +713,30 @@ void test_task_c_2() {
 	stop = clock();
     
 	printf("PRE 1-commit Validate time %lu\n", stop - start);
-
+    
 	//st_prt_distribution(&root, t);
-
+    
 	start = clock();
-
+    
 	cmt_commit_task(t);
-
+    
 	stop = clock();
-
+    
 	printf("1-commit commit-time %lu\n", stop - start);
-
+    
+	printf("pages %d\n", mempager_get_pagecount(pdata));
+    
+    printf("copy_calls %d fixed %d non-fixed %d max_notfixed %d\n", copy_calls, cont_fixed, cont_notfixed, max_notfixed);
+    
 	t = tk_create_task(psource, pdata);
-
+    
 	// set pagesource-root
 	tk_root_ptr(t, &root);
     
 	tk_ref_ptr(&root);
     
     //st_prt_page(&root);
-
+    
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
@@ -746,35 +752,49 @@ void test_task_c_2() {
 	stop = clock();
     
 	printf("1-commit Validate time (2) %lu\n", stop - start);
-
+    
 	//st_prt_distribution(&root, t);
-
+    
 	start = clock();
-
+    
 	it_create(t, &it, &root);
-
+    
 	for (i = 0; it_next(t, 0, &it, sizeof(keystore)); i++)
 		;
-
+    
 	it_dispose(t, &it);
-
+    
 	ASSERT(HIGH_ITERATION_COUNT == i);
-
+    
 	stop = clock();
-
+    
 	printf("1-commit Time validate (iterate) %lu\n", stop - start);
-
+    
 	tk_drop_task(t);
-	//cmt_commit_task(t);
+    mempager_destroy(pdata);
+}
 
-	// create a new mempager
-	pdata = util_create_mempager();
+void test_task_c_2b() {
+	clock_t start, stop;
 
+	st_ptr root, tmp;
+	task* t;
+	it_ptr it;
+	int i;
+	uchar keystore[100];
+    
+    cont_fixed = 0;
+    cont_notfixed = 0;
+    max_notfixed = 0;
+    copy_calls = 0;
+	
+    cle_pagesource* psource = &util_memory_pager;
+	cle_psrc_data pdata = util_create_mempager();
+
+	puts("\nRunning mempager: Multi-commit-test\n");
+    
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-        if (i == 4655) {
-            printf("ping");
-        }
 		//  new task
 		t = tk_create_task(psource, pdata);
 
@@ -784,8 +804,7 @@ void test_task_c_2() {
 		tmp = root;
 		memcpy(keystore, (char* )&i, sizeof(int));
 		st_insert(t, &tmp, (cdat) keystore, sizeof(keystore));
-//		st_insert(t,&root,(cdat)keystore,10);	// mem-bug!!!
-
+        
 		cmt_commit_task(t);
 	}
 	stop = clock();
@@ -797,13 +816,25 @@ void test_task_c_2() {
 
 	// should not happen.. but
 	ASSERT(t);
-	printf("size %d\n", mempager_get_pagecount(pdata));
+	printf("pages %d\n", mempager_get_pagecount(pdata));
+    
+    printf("copy_calls %d fixed %d non-fixed %d max_notfixed %d\n", copy_calls, cont_fixed, cont_notfixed, max_notfixed);
 
 	// set pagesource-root
 	tk_root_ptr(t, &root);
 
-	tk_ref_ptr(&root);
+	//tk_ref_ptr(&root);
+    
+    //st_prt_page(&root);
 
+	start = clock();
+	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
+		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
+	}
+	stop = clock();
+    
+	printf("Multi-commit Time validate %lu\n", stop - start);
+    
 	start = clock();
 
 	it_create(t, &it, &root);
@@ -819,17 +850,10 @@ void test_task_c_2() {
 
 	printf("Multi-commit Time validate (iterate) %lu\n", stop - start);
 
-	start = clock();
-	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
-		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
-	}
-	stop = clock();
-
-	printf("Multi-commit Time validate %lu\n", stop - start);
-
 	st_prt_distribution(&root, t);
 
 	tk_drop_task(t);
+    mempager_destroy(pdata);
 }
 
 void test_task_c_3() {
@@ -1026,6 +1050,7 @@ void test_commit() {
 	task* t = tk_create_task(psource, pdata);
     st_ptr root,p,p2,pe;
     it_ptr it;
+    int rounds = 0;
     
     char* strs[] = { "12345",
         "12346",
@@ -1043,6 +1068,7 @@ void test_commit() {
     
     char buffer[1000];
     page* pg = (page*) buffer;
+    int i;
     
     pg->id = 0;
     pg->parent = 0;
@@ -1093,8 +1119,8 @@ void test_commit() {
 	it_create(t, &it, &p);
     
 	while(it_next(t, 0, &it, 0)){
-        printf("%*s\n", it.kused, it.kdata);
-        //ASSERT(st_exist(t, &p, it.kdata, it.kused));
+        //printf("%*s\n", it.kused, it.kdata);
+        ASSERT(st_exist(t, &p, it.kdata, it.kused));
     }
     
 	it_dispose(t, &it);
@@ -1118,7 +1144,7 @@ void test_commit() {
     // to update the pg-ptr in root also
     ASSERT(st_is_empty(t, &root) == 0);
 
-    st_prt_page(&root);
+    //st_prt_page(&root);
 
     cmt_commit_task(t);
     
@@ -1131,10 +1157,53 @@ void test_commit() {
     st_prt_page(&root);
 
     for (str = strs; *str != 0; str++) {
+        printf("%s\n", *str);
         ASSERT(st_exist(t, &root, (cdat)*str, (uint)strlen(*str)));
     }
     
 	tk_drop_task(t);
+    
+    //  new task
+    pdata = util_create_mempager();
+    
+	t = tk_create_task(psource, pdata);
+    
+	// set pagesource-root
+	tk_root_ptr(t, &root);
+
+    rounds = 50000;
+    
+    for(i = 0; i < rounds; ++i) {
+        p = root;
+        st_insert(t, &p, (cdat)&i, sizeof(int));
+    }
+    
+    /*
+    puts("----");
+
+    tk_root_ptr(t, &root);
+    st_prt_page(&root);
+    
+    puts("----");
+     */
+    
+    cmt_commit_task(t);
+
+	t = tk_create_task(psource, pdata);
+    
+	// set pagesource-root
+	tk_root_ptr(t, &root);
+    
+    st_prt_page(&root);
+
+    for(i = 0; i < rounds; ++i) {
+        if (i == 256) {
+            i = i;
+        }
+        ASSERT(st_exist(t, &root, (cdat)&i, sizeof(int)));
+    }
+	
+    tk_drop_task(t);
 }
 
 /////////// basenames ////////////
@@ -1179,8 +1248,9 @@ static int _setup_base() {
 int main(int argc, char* argv[]) {
     test_commit();
 
-	test_task_c_2();
+	test_task_c_2a();
 
+	test_task_c_2b();
 
 
 	test_struct_c();

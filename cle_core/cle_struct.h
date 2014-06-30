@@ -68,7 +68,6 @@ struct task
 	task_page*      wpages;
 	cle_pagesource* ps;
 	cle_psrc_data   psrc_data;
-	segment         segment;
 	st_ptr			root;
 	st_ptr			pagemap;
 };
@@ -91,5 +90,11 @@ page* _tk_check_ptr(task* t, st_ptr* pt);
 page* _tk_check_page(task* t, page* pw);
 
 void tk_stats();
+
+
+extern int cont_fixed;
+extern int cont_notfixed;
+extern int max_notfixed;
+extern int copy_calls;
 
 #endif

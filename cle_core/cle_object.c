@@ -236,7 +236,7 @@ static const char basenames[] = { 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0
  object store */
 static oid _new_oid(cle_instance inst, st_ptr* newobj) {
 	oid id;
-	id._low = tk_segment(inst.t);
+	id._low = 1; //TOOD tk_segment(inst.t);
 
 	while (1) {
 		*newobj = inst.root;
@@ -271,7 +271,7 @@ static oid _new_oid(cle_instance inst, st_ptr* newobj) {
 			if (id._high[i] != 0)
 				break;
 
-			id._low = tk_new_segment(inst.t);
+			id._low = id._low + 1; // TODO tk_new_segment(inst.t);
 		}
 	}
 

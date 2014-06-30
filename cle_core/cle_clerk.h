@@ -25,7 +25,6 @@ typedef unsigned long ulong;
 typedef unsigned short ushort;
 typedef unsigned char uchar;
 typedef const unsigned char* cdat;
-typedef unsigned short segment;
 
 typedef struct task task;
 
@@ -147,10 +146,6 @@ uint st_stream_pop(struct st_stream* ctx);
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);
 
 task* tk_clone_task(task* parent);
-
-// segment value never 0
-segment tk_segment(task* t);
-segment tk_new_segment(task* t);
 
 void tk_drop_task(task* t);
 int cmt_commit_task(task* t);

@@ -48,10 +48,13 @@ static void print_struct(page* pg, const key* me, int ind, int meoff) {
 				fprintf(f, "(%s%d)(EXT) page:%p (%d - n:%d) ", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset, pt->pg,
 						meoff, pt->next);
                 
+                /*
                 if (pt->koffset == 1){
 					puts(">> XXXXXX");
                 }
-				else if (ind < 0) {
+				else
+                 */
+                if (ind < 5) {
 					wrap = pt->pg;
 					printf(" (%d)>>\n", wrap->used);
 					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2, sizeof(page));
@@ -61,7 +64,7 @@ static void print_struct(page* pg, const key* me, int ind, int meoff) {
 				fprintf(f, "(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset,
 						pt->pg, pt->koffset, meoff, pt->next);
                 
-                if (ind < 4) {
+                if (ind < 10) {
                     print_struct((page*) pt->pg, GOKEY((page*) pt->pg,
                                                        pt->koffset), ind + 2, pt->koffset);
                 }

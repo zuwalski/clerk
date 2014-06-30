@@ -60,7 +60,7 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 		d |= (d >> 1);
 		d |= (d >> 2);
 		d |= (d >> 4);
-		// lzc(a)
+		// lzc(d)
 		d -= ((d >> 1) & 0x55);
 		d = (((d >> 2) & 0x33) + (d & 0x33));
 		d = (((d >> 4) + d) & 0x0f);
@@ -265,12 +265,23 @@ static struct _st_lkup_res _init_res(task* t, st_ptr* pt, cdat path, uint length
 /* Interface-functions */
 
 uint st_empty(task* t, st_ptr* pt) {
-	key* nk = tk_alloc(t, sizeof(key) + 2, &pt->pg);	// dont use alloc (8-byte alignes) and waste 2 bytes here
+    task_page* pg = t->stack;
+    ushort kpt = pg->pg.used;
+    
+    kpt += 1 & kpt; // align
+    if (kpt + sizeof(key) >= pg->pg.size) {
+        _tk_stack_new(t);
+        pg = t->stack;
+        kpt = pg->pg.used;
+    }
+    
+    pt->pg = &pg->pg;
+    pg->pg.used = kpt + sizeof(key);
 
-	pt->key = (char*) nk - (char*) pt->pg;
+	pt->key = kpt;
 	pt->offset = 0;
 
-	memset(nk, 0, sizeof(key));
+	memset(GOKEY(pt->pg, kpt), 0, sizeof(key));
 	return 0;
 }
 
