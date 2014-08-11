@@ -34,6 +34,40 @@ struct _tk_setup {
 	ushort l_pt;
 };
 
+static uint _tk_measure2x(page* pw, ushort parent, ushort kptr) {
+    uint size = 0;
+    
+    while (kptr) {
+        key* k = GOOFF(pw,kptr);
+        uint nsize = _tk_measure2x(pw, parent, k->next);
+        
+        printf("%d -> %d = %d (%d)\n", parent, kptr, nsize, size);
+        
+        size += nsize;
+        
+        if (ISPTR(k)) {
+            ptr* pt = (ptr*) k;
+            if (pt->koffset > 1) {
+                pw = pt->pg;
+            } else {
+                return size + sizeof(ptr);
+            }
+        } else if (k->length) {
+            nsize = 1 + sizeof(key) + CEILBYTE(k->length);
+            
+            nsize += _tk_measure2x(pw, kptr, k->sub);
+            
+            printf("%d = %d (%d)\n", kptr, nsize, size);
+            
+            return size + nsize;
+        }
+        
+        kptr = k->sub;
+    }
+    
+    return size;
+}
+
 static void _tk_compact_copy(struct _tk_setup* setup, page* pw, key* parent, ushort* rsub, ushort next, int adjoffset) {
 	while (next != 0) {
 		key* k = GOOFF(pw,next);

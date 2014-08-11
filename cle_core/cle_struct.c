@@ -19,6 +19,9 @@
 
 #include "cle_struct.h"
 
+// TODO replace lzc with intrincis 
+
+
 struct _st_lkup_res {
 	task* t;
 	page* pg;
@@ -55,7 +58,7 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 			curr--;
 		}
 		rt->path = curr;
-
+        
 		// fold 1's after msb
 		d |= (d >> 1);
 		d |= (d >> 2);

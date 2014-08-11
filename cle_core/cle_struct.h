@@ -91,10 +91,4 @@ page* _tk_check_page(task* t, page* pw);
 
 void tk_stats();
 
-
-extern int cont_fixed;
-extern int cont_notfixed;
-extern int max_notfixed;
-extern int copy_calls;
-
 #endif
