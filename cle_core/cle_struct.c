@@ -32,7 +32,8 @@ struct _st_lkup_res {
 	key* d_sub;
 	cdat path;
 	uint length;
-	uint diff;
+    ushort diff;
+    ushort readonly;
 };
 
 static uint _st_lookup(struct _st_lkup_res* rt) {
@@ -58,6 +59,9 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 			curr--;
 		}
 		rt->path = curr;
+        
+        
+        //TODO use intrinsic lzcnt
         
 		// fold 1's after msb
 		d |= (d >> 1);
@@ -99,7 +103,7 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 		}
 
 		if (ISPTR(me))
-			me = _tk_get_ptr(rt->t, &rt->pg, me);
+			me = _tk_get_ptr(rt->t, &rt->pg, me, rt->readonly);
 		ckey = KDATA(me);
 		max = me->length;
 		rt->diff = 0;
@@ -250,6 +254,7 @@ static void _pt_move(st_ptr* pt, struct _st_lkup_res* rt) {
 	pt->pg = rt->pg;
 	pt->key = (char*) rt->sub - (char*) rt->pg;
 	pt->offset = rt->diff;
+    pt->key |= rt->readonly;
 }
 
 static struct _st_lkup_res _init_res(task* t, st_ptr* pt, cdat path, uint length) {
@@ -258,10 +263,11 @@ static struct _st_lkup_res _init_res(task* t, st_ptr* pt, cdat path, uint length
 	rt.path = path;
 	rt.length = length << 3;
 	rt.pg = _tk_check_ptr(t, pt);
-	rt.sub = GOOFF(rt.pg,pt->key);
+	rt.sub = GOOFF(rt.pg, pt->key & 0xFFFE);
 	rt.prev = 0;
 	rt.diff = pt->offset;
 	rt.d_sub = 0;
+    rt.readonly = pt->key & 1;
 	return rt;
 }
 
@@ -294,7 +300,7 @@ uint st_is_empty(task* t, st_ptr* pt) {
 	if (pt == 0 || pt->pg == 0)
 		return 1;
 	_tk_check_ptr(t, pt);
-	k = GOOFF(pt->pg,pt->key);
+	k = GOOFF(pt->pg, pt->key & 0xFFFE);
 	offset = pt->offset;
 	while (1) {
 		if (offset < k->length)
@@ -323,6 +329,10 @@ uint st_move(task* t, st_ptr* pt, cdat path, uint length) {
 
 uint st_insert(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
+    
+    if (rt.readonly) {
+        return -1;
+    }
 
 	if (_st_lookup(&rt))
 		_st_write(&rt);
@@ -374,7 +384,13 @@ static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* 
 
 uint st_update(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt;
-	struct _prepare_update pu = _st_prepare_update(&rt, t, pt);
+	struct _prepare_update pu;
+    
+    if (pt->key & 1) {
+        return -1;
+    }
+    
+    pu = _st_prepare_update(&rt, t, pt);
 
 	if (length > 0) {
 		length <<= 3;
@@ -453,6 +469,10 @@ static uint _st_do_delete(struct _st_lkup_res* rt) {
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
 
+    if (rt.readonly) {
+        return -1;
+    }
+
 	if (_st_lookup(&rt))
 		return 1;
 
@@ -463,13 +483,22 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length) {
 
 uint st_clear(task* t, st_ptr* pt) {
 	struct _st_lkup_res rt;
+    
+    if (pt->key & 1) {
+        return -1;
+    }
+    
 	_st_prepare_update(&rt, t, pt);
 	return 0;
 }
 
 uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, 0, 0);
-
+    
+    if (rt.readonly) {
+        return -1;
+    }
+    
 	if (length > 0)
 		_st_make_writable(&rt);
 
@@ -477,7 +506,7 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length) {
 		uint wlen;
 
 		if (ISPTR(rt.sub)) {
-			rt.sub = _tk_get_ptr(t, &rt.pg, rt.sub);
+			rt.sub = _tk_get_ptr(t, &rt.pg, rt.sub, 0);
 			_st_make_writable(&rt);
 		}
 
@@ -508,7 +537,9 @@ uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length) {
 uint st_link(task* t, st_ptr* to, st_ptr* from) {
 	if (from->offset != 0) {
 		return 1;
-	} else {
+	} else if (to->key & 1) {
+        return -1;
+    } else {
 		struct _st_lkup_res rt;
 		struct _prepare_update pu = _st_prepare_update(&rt, t, to);
 		ptr* pt = _st_page_overflow(&rt, 0);
@@ -527,7 +558,12 @@ uint st_link(task* t, st_ptr* to, st_ptr* from) {
 
 uint st_append(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
-	rt.diff = rt.sub->length;
+    
+    if (rt.readonly) {
+        return -1;
+    }
+	
+    rt.diff = rt.sub->length;
 
 	if (rt.sub->sub) {
 		key* nxt = GOOFF(rt.pg,rt.sub->sub);
@@ -541,7 +577,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length) {
 
 		if (nxt->offset == rt.sub->length) {
 			while (1) {
-				rt.sub = (ISPTR(nxt)) ? _tk_get_ptr(t, &rt.pg, nxt) : nxt;
+				rt.sub = (ISPTR(nxt)) ? _tk_get_ptr(t, &rt.pg, nxt, 0) : nxt;
 				if (rt.sub->sub == 0) {
 					rt.diff = rt.sub->length;
 					rt.prev = 0;
@@ -564,7 +600,7 @@ uint st_append(task* t, st_ptr* pt, cdat path, uint length) {
 
 static key* _trace_nxt(st_ptr* pt) {
 	key* nxt;
-	key* me = GOOFF(pt->pg,pt->key);
+	key* me = GOOFF(pt->pg,pt->key & 0xFFFE);
 	// deal with offset
 	if (me->sub == 0)
 		return 0;
@@ -581,8 +617,9 @@ static key* _trace_nxt(st_ptr* pt) {
 
 // return read lenght. Or -1 => eof data, -2 more data, buffer full
 int st_get(task* t, st_ptr* pt, char* buffer, uint length) {
+    const int readonly = pt->key & 1;
 	page* pg = _tk_check_ptr(t, pt);
-	key* me = GOOFF(pg,pt->key);
+	key* me = GOOFF(pg,pt->key & 0xFFFE);
 	key* nxt;
 	cdat ckey = KDATA(me) + (pt->offset >> 3);
 	uint offset = pt->offset;
@@ -615,7 +652,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length) {
 			}
 
 			offset = 0;
-			me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt) : nxt;
+			me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt, readonly) : nxt;
 			ckey = KDATA(me);
 			if (me->sub) {
 				nxt = GOOFF(pg,me->sub);
@@ -634,7 +671,7 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length) {
 			else if (nxt && nxt->offset == me->length)	// continuing key?
 					{
 				pt->offset = 0;
-				me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt) : nxt;
+				me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt, readonly) : nxt;
 			} else {
 				pt->offset = me->length;
 				read = -1;	// no more!
@@ -647,14 +684,15 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint length) {
 		}
 	}
 
-	pt->key = (char*) me - (char*) pg;
+	pt->key = ((char*) me - (char*) pg) | readonly;
 	pt->pg = pg;
 	return read;
 }
 
 uint st_offset(task* t, st_ptr* pt, uint offset) {
+    const int readonly = pt->key & 1;
 	page* pg = _tk_check_ptr(t, pt);
-	key* me = GOOFF(pg,pt->key);
+	key* me = GOOFF(pg,pt->key & 0xFFFE);
 	key* nxt;
 	uint klen;
 
@@ -670,7 +708,7 @@ uint st_offset(task* t, st_ptr* pt, uint offset) {
 
 		// move to next key for more data?
 		if (offset > 0 && nxt && nxt->offset == me->length) {
-			me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt) : nxt;
+			me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt, readonly) : nxt;
 			if (me->sub) {
 				nxt = GOOFF(pg,me->sub);
 				klen = nxt->offset;
@@ -685,20 +723,21 @@ uint st_offset(task* t, st_ptr* pt, uint offset) {
 				pt->offset = max;
 			else if (nxt) {
 				pt->offset = 0;
-				me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt) : nxt;
+				me = (ISPTR(nxt)) ? _tk_get_ptr(t, &pg, nxt, readonly) : nxt;
 			} else
 				pt->offset = me->length;
 
 			// move st_ptr
 			pt->pg = pg;
-			pt->key = (char*) me - (char*) pg;
+			pt->key = ((char*) me - (char*) pg) | readonly;
 			return (offset >> 3);
 		}
 	}
 }
 
 int st_scan(task* t, st_ptr* pt) {
-	key* k = GOOFF(_tk_check_ptr(t, pt),pt->key);
+    const int readonly = pt->key & 1;
+	key* k = GOOFF(_tk_check_ptr(t, pt),pt->key & 0xFFFE);
 
 	while (1) {
 		uint tmp;
@@ -723,10 +762,10 @@ int st_scan(task* t, st_ptr* pt) {
 		}
 
 		if (ISPTR(k))
-			k = _tk_get_ptr(t, &pt->pg, k);
+			k = _tk_get_ptr(t, &pt->pg, k, readonly);
 
 		pt->offset = 0;
-		pt->key = (char*) k - (char*) pt->pg;
+		pt->key = ((char*) k - (char*) pt->pg) | readonly;
 	}
 }
 
@@ -785,6 +824,11 @@ static uint _ins_st(void* p, cdat txt, uint len, uint at) {
 uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 	struct _st_insert sins;
 	uint ret;
+    
+    if (to->key & 1) {
+        return -1;
+    }
+    
 	sins.rt.t = t;
 	sins.rt.pg = _tk_check_ptr(t, to);
 	sins.rt.sub = GOOFF(to->pg,to->key);
@@ -810,7 +854,7 @@ int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
 	struct st_stream* snd = st_merge_stream(t, to);
     
-	uint ret = st_map_st(t, from, (uint(*)(void*, cdat, uint, uint))st_stream_data, (uint(*)(void*))st_stream_push, (uint(*)(void*))st_stream_pop, snd);
+	uint ret = snd && st_map_st(t, from, (uint(*)(void*, cdat, uint, uint))st_stream_data, (uint(*)(void*))st_stream_push, (uint(*)(void*))st_stream_pop, snd);
     
 	st_destroy_stream(snd);
 	return ret;
@@ -818,7 +862,7 @@ uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
 
 uint st_delete_st(task* t, st_ptr* from, st_ptr* str) {
 	struct _st_lkup_res rt = _init_res(t, from, 0, 0);
-	uint ret = st_map_st(t, str, _mv_st, _dont_use, _dont_use, &rt);
+	uint ret = rt.readonly || st_map_st(t, str, _mv_st, _dont_use, _dont_use, &rt);
 
 	if (ret == 0 && _st_do_delete(&rt))
 		_st_prepare_update(&rt, t, from);
@@ -876,7 +920,7 @@ static uint _st_worker(struct _st_map_worker_struct* work, page* pg, key* me, ke
         
         if((ret = work->pop(work->ctx))) break;
 
-        me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt) : nxt;
+        me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt, 1) : nxt;
         nxt = me->sub? GOOFF(pg, me->sub) : 0;
         offset = 0;
     }
@@ -917,7 +961,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 					break;
 
 				if (idx & 0xF0) {
-					me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt) : nxt;
+					me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt, 1) : nxt;
 					nxt = (me->sub != 0) ? GOOFF(pg,me->sub) : 0;
 
 					if ((ret = _st_map_worker(work, pg, me, nxt, 0, at)))
@@ -932,7 +976,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 				idx++;
 			}
 
-			me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt) : nxt;
+			me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt, 1) : nxt;
 			nxt = (me->sub != 0) ? GOOFF(pg,me->sub) : 0;
 			offset = 0;
 		}
@@ -991,6 +1035,9 @@ static uint _st_strm_ins(struct _st_lkup_res* rt) {
 }
 
 struct st_stream* st_merge_stream(task* t, st_ptr* pt) {
+    if (pt->key & 1) {
+        return 0;
+    }
 	return _st_create_stream(t, _st_strm_ins, pt);
 }
 
@@ -1013,6 +1060,11 @@ static uint _st_strm_del_pop(struct st_stream* ctx) {
 
 struct st_stream* st_delete_stream(task* t, st_ptr* pt) {
 	struct st_stream* s = _st_create_stream(t, _st_strm_del_dat, pt);
+
+    if (pt->key & 1) {
+        return 0;
+    }
+
 	s->pop_fun = _st_strm_del_pop;
 	st_stream_push(s);
 	return s;
@@ -1020,6 +1072,9 @@ struct st_stream* st_delete_stream(task* t, st_ptr* pt) {
 
 uint st_destroy_stream(struct st_stream* ctx) {
 	uint ret = 0;
+    if (ctx == 0) {
+        return 0;
+    }
 	if (ctx->pop_fun)
 		ret = ctx->pop_fun(ctx);
 

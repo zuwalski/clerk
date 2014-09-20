@@ -663,8 +663,6 @@ static state _bh_pop(void* v) {
 
 	h->cmn->out = tmp->link;
 
-	tk_free_ptr(h->cmn->inst.t, &tmp->pt);
-
 	tmp->link = h->cmn->free;
 	h->cmn->free = tmp;
 

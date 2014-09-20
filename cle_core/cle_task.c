@@ -20,6 +20,11 @@
 
 #include "cle_struct.h"
 
+struct tk_page_map {
+    page* wcopy;
+    page* parent;
+};
+
 /* mem-manager */
 // TODO: call external allocator
 // TODO: should not be used outside task.c -> make private
@@ -51,9 +56,7 @@ static task_page* _tk_alloc_page(task* t, uint page_size) {
 	pg->pg.size = page_size;
 	pg->pg.used = sizeof(page);
 	pg->pg.waste = 0;
-	pg->pg.parent = 0;
 
-	pg->refcount = 1;
 	pg->next = t->stack;
 	pg->ovf = 0;
 	return pg;
@@ -93,42 +96,23 @@ void* tk_alloc(task* t, uint size, struct page** pgref) {
 	offset = pg->pg.used;
 	pg->pg.used += size;
 
-	t->stack->refcount++;
-
 	if (pgref != 0)
 		*pgref = &t->stack->pg;
 	return (void*) ((char*) &pg->pg + offset);
 }
 
-static void _tk_release_page(task* t, task_page* wp) {
-
-}
-
-static page* _tk_load_page(task* t, cle_pageid pid, page* parent) {
-	st_ptr root_ptr = t->pagemap;
-	page* pw;
-
-	// have a writable copy of the page?
-	if (t->wpages == 0 || st_move(t, &root_ptr, (cdat) &pid, sizeof(pid))) {
-		pw = (page*) pid;
-	}
-	// found: read address of page-copy
-	else if (st_get(t, &root_ptr, (char*) &pw, sizeof(pw)) != -1)
-		cle_panic(t); // map corrupted
-
-	return pw;
-}
-
 page* _tk_check_page(task* t, page* pw) {
+    page* wcopy = 0;
 	if (pw->id == pw && t->wpages != 0) {
 		st_ptr root_ptr = t->pagemap;
-
+        
 		// have a writable copy of the page?
 		if (st_move(t, &root_ptr, (cdat) &pw->id, sizeof(cle_pageid)) == 0)
-			if (st_get(t, &root_ptr, (char*) &pw, sizeof(pw)) != -1)
+			if (st_get(t, &root_ptr, (char*) &wcopy, sizeof(page*)) >= -1)
 				cle_panic(t); // map corrupted
 	}
-	return pw;
+    
+	return wcopy? wcopy : pw;
 }
 
 page* _tk_check_ptr(task* t, st_ptr* pt) {
@@ -136,47 +120,101 @@ page* _tk_check_ptr(task* t, st_ptr* pt) {
 	return pt->pg;
 }
 
-/* copy to new (internal) page */
-page* _tk_write_copy(task* t, page* pg) {
-	st_ptr root_ptr;
-	task_page* tpg;
-	page* newpage;
+page* _tk_parent(task* t, cle_pageid pid) {
+    page* parent = 0;
 
-	if (pg->id != pg)
-		return pg;
-
-	// add to map of written pages
-	root_ptr = t->pagemap;
-
-	if (st_insert(t, &root_ptr, (cdat) &pg->id, sizeof(cle_pageid)) == 0) {
-        // already there
-		if (st_get(t, &root_ptr, (char*) &pg, sizeof(pg)) != -1)
-			cle_panic(t); // map corrupted
-		return pg;
-	}
-
-    // copy-on-write: new page
-	tpg = _tk_alloc_page(t, pg->size);
-	newpage = &tpg->pg;
-
-	memcpy(newpage, pg, pg->used);
-
-	// pg in written pages list
-	tpg->next = t->wpages;
-	t->wpages = tpg;
-
-	st_append(t, &root_ptr, (cdat) &newpage, sizeof(page*));
-
-	return newpage;
+    if (t->root.pg->id != pid) {
+        st_ptr root_ptr = t->pagemap;
+        struct tk_page_map pm;
+        
+        if (st_move(t, &root_ptr, (cdat) &pid, sizeof(pid))) {
+            cle_panic(t); // broken protocol -> parent not found in map
+        }
+        
+        if (st_get(t, &root_ptr, (char*) &pm, sizeof(struct tk_page_map)) != -1) {
+            cle_panic(t); // map corrupted
+        }
+        
+        parent = _tk_check_page(t, pm.parent);
+    }
+    
+    return parent;
 }
 
-key* _tk_get_ptr(task* t, page** pg, key* me) {
+static page* _tk_load_page(task* t, cle_pageid pid, page* parent, const int readonly) {
+	st_ptr root_ptr = t->pagemap;
+    page* wcopy = (page*) pid;
+    
+    if (readonly) {
+        // have a writable copy of the page?
+        if (t->wpages && st_move(t, &root_ptr, (cdat) &pid, sizeof(cle_pageid)) != 0) {
+            wcopy = 0;
+        }
+    } else if (st_insert(t, &root_ptr, (cdat) &pid, sizeof(cle_pageid))) {
+        // create parent-child mapping
+        struct tk_page_map pm;
+        
+        pm.wcopy = 0;
+        pm.parent = parent;
+        
+        st_append(t, &root_ptr, (cdat) &pm, sizeof(struct tk_page_map));
+    }
+    
+    // if not found: read address of page-copy
+    if (wcopy == 0 && st_get(t, &root_ptr, (char*) &wcopy, sizeof(page*)) >= -1) {
+        cle_panic(t); // map corrupted
+    }
+    
+	return wcopy;
+}
+
+/* copy to new (internal) page */
+page* _tk_write_copy(task* t, page* pg) {
+    struct tk_page_map pm;
+	st_ptr root_ptr, tmp;
+	task_page* tpg;
+    
+	if (pg->id != pg)
+		return pg;
+    
+	// add to map of written pages
+	root_ptr = t->pagemap;
+    
+    if (st_move(t, &root_ptr, (cdat) &pg->id, sizeof(cle_pageid))) {
+        cle_panic(t); // broken protocol -> parent not found in map
+    }
+    
+    tmp = root_ptr;
+    if (st_get(t, &tmp, (char*) &pm, sizeof(struct tk_page_map)) != -1) {
+        cle_panic(t); // map corrupted
+    }
+    
+    if (pm.wcopy) {
+        cle_panic(t); // broken protocol -> should have been id'ed
+    }
+    
+    // copy-on-write: new page
+    tpg = _tk_alloc_page(t, pg->size);
+    pm.wcopy = &tpg->pg;
+    
+    memcpy(pm.wcopy, pg, pg->used);
+    
+    // pg in written pages list
+    tpg->next = t->wpages;
+    t->wpages = tpg;
+    
+    st_dataupdate(t, &root_ptr, (cdat) &pm.wcopy, sizeof(page*));
+    
+    return pm.wcopy;
+}
+
+key* _tk_get_ptr(task* t, page** pg, key* me, const int readonly) {
 	ptr* pt = (ptr*) me;
 	if (pt->koffset != 0) {
 		*pg = (page*) pt->pg;
 		me = GOKEY(*pg,pt->koffset); /* points to a key - not an ovf-ptr */
 	} else {
-		*pg = _tk_load_page(t, pt->pg, *pg);
+		*pg = _tk_load_page(t, pt->pg, *pg, readonly);
 		/* go to root-key */
 		me = GOKEY(*pg,sizeof(page));
 	}
@@ -220,40 +258,17 @@ void _tk_remove_tree(task* t, page* pg, ushort off) {
 
 }
 
-void tk_unref(task* t, struct page* pg) {
-	if (pg->id == 0) {
-		task_page* tp = TO_TASK_PAGE(pg);
-
-		if (--tp->refcount == 0)
-			_tk_release_page(t, tp);
-	}
-}
-
-void tk_free_ptr(task* t, st_ptr* ptr) {
-	tk_unref(t, ptr->pg);
-}
-
-void tk_ref_ptr(st_ptr* ptr) {
-	if (ptr->pg->id == 0)
-		TO_TASK_PAGE(ptr->pg) ->refcount++;
-}
-
 void tk_root_ptr(task* t, st_ptr* pt) {
 	key* k;
 	_tk_check_ptr(t, &t->root);
 
 	k = GOKEY(t->root.pg,t->root.key);
 	if (ISPTR(k)) {
-		k = _tk_get_ptr(t, &t->root.pg, k);
+		k = _tk_get_ptr(t, &t->root.pg, k, 0);
 		t->root.key = sizeof(page);
 	}
 
 	*pt = t->root;
-}
-
-void tk_dup_ptr(st_ptr* to, st_ptr* from) {
-	*to = *from;
-	tk_ref_ptr(to);
 }
 
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data) {
@@ -273,10 +288,13 @@ task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data) {
 		t->root.pg = ps->root_page(psrc_data);
 		t->root.key = sizeof(page);
 		t->root.offset = 0;
+
+        // write root in page-map
+        _tk_load_page(t, t->root.pg->id, 0, 0);
 	} else {
 		st_empty(t, &t->root);
 	}
-
+    
 	return t;
 }
 
@@ -547,8 +565,8 @@ static struct _tk_trace_page_hub* _tk_trace_page_ptr(struct _tk_trace_base* base
 
 				_tk_push_key(base, k);
 
-				if (pgw->parent != 0) {
-					struct _tk_trace_page_hub* r = _tk_trace_page_ptr(base, pgw->parent, pgw);
+				if (pgw->id != base->t->root.pg->id) {
+					struct _tk_trace_page_hub* r = _tk_trace_page_ptr(base, _tk_parent(base->t, pgw), pgw);
 					if (r == 0)
 						return 0;
 
@@ -595,7 +613,7 @@ int tk_delta(task* t, st_ptr* delete_tree, st_ptr* insert_tree) {
 	base.t = t;
 
 	for (pgw = t->wpages; pgw != 0; pgw = pgw->next) {
-		if (pgw->pg.parent == 0 || _tk_trace_page_ptr(&base, pgw->pg.parent, &pgw->pg)) {
+		if (pgw->pg.id == t->root.pg->id || _tk_trace_page_ptr(&base, _tk_parent(t, pgw->pg.id), &pgw->pg)) {
 			struct trace_ptr t_delete, t_insert;
 
 			t_delete.base = delete_tree;

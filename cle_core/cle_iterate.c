@@ -39,6 +39,7 @@ struct _st_lkup_it_res {
 	uint diff;
 	uint low_diff;
 	uint high_diff;
+    uint readonly;
 };
 
 static void _it_lookup(struct _st_lkup_it_res* rt) {
@@ -142,7 +143,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 
 		// if this is a pointer - resolve it
 		if (ISPTR(me))
-			me = _tk_get_ptr(rt->t, &rt->pg, me);
+			me = _tk_get_ptr(rt->t, &rt->pg, me, rt->readonly);
 
 		ckey = KDATA(me);
 		atsub = rt->path;
@@ -195,7 +196,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 		uint clen;
 
 		if (ISPTR(sub))	// ptr-key?
-			sub = _tk_get_ptr(rt->t, &rt->pg, sub);
+			sub = _tk_get_ptr(rt->t, &rt->pg, sub, rt->readonly);
 
 		rt->sub = sub;
 		ckey = KDATA(sub);
@@ -279,15 +280,29 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt, const uint is_
 	} while (sub);
 }
 
+static struct _st_lkup_it_res _init_res(task* t, it_ptr* it) {
+    struct _st_lkup_it_res rt;
+    rt.t = t;
+    rt.path = it->kdata;
+    rt.length = it->kused << 3;
+    rt.pg = _tk_check_page(t, it->pg);
+    rt.sub = GOOFF(rt.pg, it->key & 0xFFFE);
+    rt.prev = 0;
+    rt.diff = it->offset;
+    rt.readonly = it->key & 1;
+    return rt;
+}
+
+static void _it_move(struct _st_lkup_it_res* rt, st_ptr*  pt) {
+	if (pt) {
+		pt->pg = rt->pg;
+		pt->key = ((char*) rt->sub - (char*) rt->pg) | rt->readonly;
+		pt->offset = rt->diff;
+	}
+}
+
 uint it_next(task* t, st_ptr* pt, it_ptr* it, const int length) {
-	struct _st_lkup_it_res rt;
-	rt.t = t;
-	rt.path = it->kdata;
-	rt.length = it->kused << 3;
-	rt.pg = _tk_check_page(t, it->pg);
-	rt.sub = GOOFF(rt.pg,it->key);
-	rt.prev = 0;
-	rt.diff = it->offset;
+	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
 		_it_lookup(&rt);
@@ -296,7 +311,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const int length) {
 			if (rt.length == 0)
 				return 0;
 		} else if (rt.length == 0) {
-			rt.diff = rt.high_diff;	//rt.high_prev? rt.high_prev->offset : 0;
+			rt.diff = rt.high_diff;
 			rt.sub = rt.high;
 			rt.prev = rt.high_prev;
 			rt.path = rt.high_path;
@@ -306,34 +321,19 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const int length) {
 		_it_get_prev(&rt);
 
 	_it_next_prev(it, &rt, 1, length);
-
-	if (pt) {
-		pt->pg = rt.pg;
-		pt->key = (char*) rt.sub - (char*) rt.pg;
-		pt->offset = rt.diff;
-	}
+    
+    _it_move(&rt, pt);
 	return (it->kused > 0);
 }
 
 uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
-	struct _st_lkup_it_res rt;
-	rt.t = t;
-	rt.path = it->kdata;
-	rt.length = it->kused << 3;
-	rt.pg = _tk_check_page(t, it->pg);
-	rt.sub = GOOFF(rt.pg,it->key);
-	rt.prev = 0;
-	rt.diff = it->offset;
+	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
 		_it_lookup(&rt);
 
 		if (rt.length == 0) {
-			if (pt) {
-				pt->pg = rt.pg;
-				pt->key = (char*) rt.sub - (char*) rt.pg;
-				pt->offset = rt.diff;
-			}
+            _it_move(&rt, pt);
 			return 2;
 		}
 
@@ -350,23 +350,12 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
 
 	_it_next_prev(it, &rt, 1, length);
 
-	if (pt) {
-		pt->pg = rt.pg;
-		pt->key = (char*) rt.sub - (char*) rt.pg;
-		pt->offset = rt.diff;
-	}
+    _it_move(&rt, pt);
 	return (it->kused > 0) ? 1 : 0;
 }
 
 uint it_prev(task* t, st_ptr* pt, it_ptr* it, const int length) {
-	struct _st_lkup_it_res rt;
-	rt.t = t;
-	rt.path = it->kdata;
-	rt.length = it->kused << 3;
-	rt.pg = _tk_check_page(t, it->pg);
-	rt.sub = GOOFF(rt.pg,it->key);
-	rt.prev = 0;
-	rt.diff = it->offset;
+	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
 		_it_lookup(&rt);
@@ -386,33 +375,18 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const int length) {
 
 	_it_next_prev(it, &rt, 0, length);
 
-	if (pt) {
-		pt->pg = rt.pg;
-		pt->key = (char*) rt.sub - (char*) rt.pg;
-		pt->offset = rt.diff;
-	}
+    _it_move(&rt, pt);
 	return (it->kused > 0);
 }
 
 uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
-	struct _st_lkup_it_res rt;
-	rt.t = t;
-	rt.path = it->kdata;
-	rt.length = it->kused << 3;
-	rt.pg = _tk_check_page(t, it->pg);
-	rt.sub = GOOFF(rt.pg,it->key);
-	rt.prev = 0;
-	rt.diff = it->offset;
+	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
 		_it_lookup(&rt);
 
 		if (rt.length == 0) {
-			if (pt) {
-				pt->pg = rt.pg;
-				pt->key = (char*) rt.sub - (char*) rt.pg;
-				pt->offset = rt.diff;
-			}
+            _it_move(&rt, pt);
 			return 2;
 		}
 
@@ -429,11 +403,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
 
 	_it_next_prev(it, &rt, 0, length);
 
-	if (pt) {
-		pt->pg = rt.pg;
-		pt->key = (char*) rt.sub - (char*) rt.pg;
-		pt->offset = rt.diff;
-	}
+    _it_move(&rt, pt);
 	return (it->kused > 0) ? 1 : 0;
 }
 
@@ -455,12 +425,9 @@ void it_create(task* t, it_ptr* it, st_ptr* pt) {
 
 	it->kdata = 0;
 	it->ksize = it->kused = 0;
-
-	//it->pg->refcount++;
 }
 
 void it_dispose(task* t, it_ptr* it) {
-	tk_unref(t, it->pg);
 }
 
 void it_reset(it_ptr* it) {
@@ -480,15 +447,13 @@ uint it_current(task* t, it_ptr* it, st_ptr* pt) {
  * update/build increasing index
  */
 uint it_new(task* t, it_ptr* it, st_ptr* pt) {
-	struct _st_lkup_it_res rt;
-	rt.t = t;
-	rt.path = it->kdata;
-	rt.length = 0;
-	rt.pg = _tk_check_page(t, it->pg);
-	rt.sub = GOOFF(rt.pg,it->key);
-	rt.prev = 0;
-	rt.diff = it->offset;
-	it->kused = 0;
+	struct _st_lkup_it_res rt = _init_res(t, it);
+    
+    if (rt.readonly) {
+        return -1;
+    }
+
+	rt.length = it->kused = 0;
 
 	_it_get_prev(&rt);
 

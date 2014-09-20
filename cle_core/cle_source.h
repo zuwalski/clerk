@@ -23,7 +23,6 @@ typedef void* cle_psrc_data;
 
 typedef struct page {
 	cle_pageid id;
-	struct page* parent;
 	unsigned short size;
 	unsigned short used;
 	unsigned short waste;

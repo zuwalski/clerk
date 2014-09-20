@@ -40,14 +40,15 @@ static void _tk_compact_copy2(page* dest, page* pg, key* parent, ushort next, in
 		if (ISPTR(k)) // pointer
 		{
 			ptr* pt = (ptr*) k;
-			if (pt->koffset > 1) {
+			if (pt->koffset) {
 				pg = (page*) pt->pg;
 				k = GOKEY(pg,pt->koffset);
                 k->offset = pt->offset;
+                // continue processing target
 			} else {
 				ptr* newptr = (ptr*) GOKEY(dest, dest->used);
 				newptr->pg = pt->pg;
-				newptr->koffset = pt->koffset;
+				newptr->koffset = 0;
 				newptr->ptr_id = PTR_ID;
 				newptr->offset = pt->offset + adjoffset;
 				newptr->next = parent->sub;
@@ -65,7 +66,7 @@ static void _tk_compact_copy2(page* dest, page* pg, key* parent, ushort next, in
         {
 			memcpy(KDATA(parent) + (parent->length >> 3), KDATA(k), CEILBYTE(k->length));
             
-			adjoffset = parent->length & 0xFFF8; // 'my' subs are offset by parent-length
+			adjoffset = parent->length & 0xFFF8; // 'my' subs are offset by floor(parent-length)
             
 			parent->length = k->length + adjoffset;
             
@@ -145,7 +146,7 @@ static ushort _tk_link_and_create_page(struct _tk_setup* setup, page* pw, int pt
     pt = (ptr*) GOOFF(pw,setup->o_pt);
 	pt->offset = ptr_offset;
 	pt->ptr_id = PTR_ID;
-	pt->koffset = 1; // magic marker
+	pt->koffset = 0;
     pt->next = 0;
     pt->pg = setup->dest->id;
     
@@ -218,9 +219,7 @@ static uint _tk_cut_key(struct _tk_setup* setup, page* pw, key* copy, int prevpt
     setup->o_pt = 0;
     
     assert(setup->dest->used <= setup->dest->size);
-    
-    //assert(size >= setup->dest->used);
-    
+
 	// cut-off 'copy'
 	copy->length = cut_adj;
     
@@ -255,7 +254,7 @@ static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort
         
         if (ISPTR(k)) {
             ptr* pt = (ptr*) k;
-            if (pt->koffset > 1) {
+            if (pt->koffset) {
                 return size + _tk_measure_2(setup, pt->pg, parent, pt->koffset);
             } else {
                 return size + sizeof(ptr);
@@ -277,33 +276,20 @@ static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort
 }
 
 static ushort _cmt_find_ptr(page* cpg, page* find, ushort koff) {
-    ushort stack[32];
-    uint idx = 0;
-    
-    while (1) {
+    while (koff) {
         key* k = GOKEY(cpg, koff);
         
         if (ISPTR(k)) {
             ptr* pt = (ptr*) k;
             if (pt->koffset == 0 && pt->pg == find->id)
-                return koff;
-        } else if (k->sub) {
-            if ((idx & 0xE0) == 0) {
-                stack[idx++] = k->sub;
-            } else {
-                koff = _cmt_find_ptr(cpg, find, k->sub);
-                if(koff)
-                    return koff;
-            }
+                break;
+        } else if((koff = _cmt_find_ptr(cpg, find, k->sub))) {
+            break;
         }
         
-        if ((koff = k->next) == 0) {
-            if (idx == 0)
-                break;
-            koff = stack[--idx];
-        }
+        koff = k->next;
     }
-    return 0;
+    return koff;
 }
 
 static page* _cmt_mark_and_link(task* t) {
@@ -314,8 +300,8 @@ static page* _cmt_mark_and_link(task* t) {
         task_page* tp, *first = t->wpages;
         
         for (tp = first; tp != end; tp = tp->next) {
-            page* parent = tp->pg.parent;
             page* find = &tp->pg;
+            page* parent = _tk_parent(t, find->id);
             
             if (parent) {
                 ushort pt_off = _cmt_find_ptr(parent, find, sizeof(page));
@@ -331,47 +317,21 @@ static page* _cmt_mark_and_link(task* t) {
                     
                     // fix offset like mem-ptr
                     //GOKEY(find,sizeof(page))->offset = pt->offset;
+                } else {
+                    // ptr not found in parent
+                    cle_panic(t);
                 }
-            } else
+            } else {
                 root = find;
+            }
+            
+            t->ps->remove_page(t->psrc_data, tp->pg.id);
         }
         
         end = first;
     }
     
-    for (end = t->wpages; end; end = end->next) {
-        t->ps->remove_page(t->psrc_data, end->pg.id);
-    }
-    
     return root;
-}
-
-static void _cmt_update_all_linked_pages(struct _tk_setup* setup, page* pg) {
-	uint i = sizeof(page);
-    
-	do {
-		const key* k = GOKEY(pg, i);
-        
-		if (ISPTR(k)) {
-            ptr* pt = (ptr*) k;
-            if (pt->koffset == 1) {
-                page* nxt_pg = pt->pg;
-                
-                pt->koffset = 0;
-                nxt_pg->parent = pg;
-                
-                // recurse onto rebuild page
-                _cmt_update_all_linked_pages(setup, nxt_pg);
-            } else {
-                ((page*) (pt->pg))->parent = pg->id;
-            }
-            
-			i += sizeof(ptr);
-		} else {
-			i += sizeof(key) + CEILBYTE(k->length);
-            i += i & 1;
-		}
-	} while (i < pg->used);
 }
 
 /**
@@ -410,11 +370,10 @@ int cmt_commit_task(task* t) {
             ptr* pt = (ptr*) k;
             t->ps->remove_page(t->psrc_data, setup.dest);
             setup.dest = pt->pg;
+        } else if(k->length == 0) {
+            puts("");
         }
-        
-        // link old pages to new root
-        _cmt_update_all_linked_pages(&setup, setup.dest);
-        
+
         // swap root
         stat = t->ps->pager_commit(t->psrc_data, setup.dest);
 	}

@@ -57,8 +57,6 @@ typedef struct overflow {
 typedef struct task_page {
 	struct task_page* next;
 	overflow*    ovf;
-	unsigned long refcount;
-
 	page pg;
 } task_page;
 
@@ -80,12 +78,14 @@ struct task
 #define CEILBYTE(l)(((l) + 7) >> 3)
 #define ISPTR(k) ((k)->length == PTR_ID)
 
-key* _tk_get_ptr(task* t, page** pg, key* me);
+key* _tk_get_ptr(task* t, page** pg, key* me, const int readonly);
 ushort _tk_alloc_ptr(task* t, task_page* pg);
 void _tk_stack_new(task* t);
 void _tk_remove_tree(task* t, page* pg, ushort key);
 page* _tk_write_copy(task* t, page* pg);
-//void tk_unref(task* t, page_wrap* pg);
+
+page* _tk_parent(task* t, cle_pageid pid);
+
 page* _tk_check_ptr(task* t, st_ptr* pt);
 page* _tk_check_page(task* t, page* pw);
 

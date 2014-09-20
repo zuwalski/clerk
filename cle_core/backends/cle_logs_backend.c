@@ -46,7 +46,7 @@ struct _mem_psrc_data {
 static struct {
 	page pg;
 	short s[6];
-} _dummy_root = { { &_dummy_root, 0, MEM_PAGE_SIZE, sizeof(page) + 10, 0 }, { 0, 0, 0, 0, 0, 0 } };
+} _dummy_root = { { &_dummy_root, MEM_PAGE_SIZE, sizeof(page) + 10, 0 }, { 0, 0, 0, 0, 0, 0 } };
 
 static page* mem_new_page(cle_psrc_data pd) {
 	struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
@@ -73,7 +73,6 @@ static page* mem_new_page(cle_psrc_data pd) {
     pg = (page*) ((char*) md->log + md->log->used);
 	pg->id = pg;
     pg->waste = 0;
-	pg->parent = 0;
     pg->size = MEM_PAGE_SIZE;
     pg->used = sizeof(page);
     
@@ -95,7 +94,7 @@ static void mem_write_page(cle_psrc_data pd, cle_pageid id, page* pg) {
 }
 
 static void mem_remove_page(cle_psrc_data pd, cle_pageid id) {
-    struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
+    //struct _mem_psrc_data* md = (struct _mem_psrc_data*) pd;
     // write remove-log
 }
 

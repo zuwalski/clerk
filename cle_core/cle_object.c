@@ -805,8 +805,6 @@ int cle_get_property_ref_value(cle_instance inst, st_ptr prop, st_ptr* ref) {
 int cle_set_property_ref(cle_instance inst, st_ptr obj, identity id, st_ptr ref) {
 	st_ptr val;
 
-	tk_ref_ptr(&ref);
-
 	_new_value(inst, obj, id, &val);
 
 	_write_prop(inst.t, &val, TYPE_REF_MEM, (cdat) &ref, sizeof(st_ptr));
