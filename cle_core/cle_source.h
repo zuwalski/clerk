@@ -33,6 +33,7 @@ typedef struct cle_pagesource {
 	page* (*new_page)(cle_psrc_data);
 	page* (*read_page)(cle_psrc_data, cle_pageid);
 	page* (*root_page)(cle_psrc_data);
+    
 	void (*write_page)(cle_psrc_data, cle_pageid, page*);
 	void (*remove_page)(cle_psrc_data, cle_pageid);
 	void (*unref_page)(cle_psrc_data, page*);

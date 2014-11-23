@@ -31,6 +31,8 @@
 
 void st_prt_page(st_ptr* pt);
 
+void st_prt_page_showsub(st_ptr* pt, int showsub);
+
 void st_prt_distribution(st_ptr* pt, task* tsk);
 
 void _tk_print(page* pg);

@@ -43,11 +43,11 @@ const char exprpath[] = "expr\0expr";
 void test_instance_c()
 {
 	cle_instance inst;
-	st_ptr root,name,pt,eventname,meth,object,empty,object1,object2,object3,propname,mobj1,mobj2;
+	st_ptr root,name,pt,object,empty,object1,object2,object3,propname,mobj1,mobj2;
 	cle_typed_identity id1,id2;
 	task* t = tk_create_task(0,0);
 	ptr_list list;
-	oid_str oidstr,oidstr2;
+	oid_str oidstr;
 	double dbl;
 	//cle_context ctx;
 
@@ -66,42 +66,42 @@ void test_instance_c()
 
 	// create object-family One <- Two <- Three
 	pt = name;
-	st_insert(t,&pt,objone,sizeof(objone));
+	st_insert(t,&pt,(cdat) objone,sizeof(objone));
 
 	ASSERT(cle_new(inst,name,empty,&object1) == 0);
 
 	ASSERT(cle_goto_object(inst,name,&object1) == 0);
 
 	pt = name;
-	st_update(t,&pt,objtwo,sizeof(objtwo));
+	st_update(t,&pt,(cdat) objtwo,sizeof(objtwo));
 
 	ASSERT(cle_new(inst,name,object1,&object2) == 0);
 
 	ASSERT(cle_goto_object(inst,name,&object2) == 0);
 
 	pt = name;
-	st_update(t,&pt,objthree,sizeof(objthree));
+	st_update(t,&pt,(cdat) objthree,sizeof(objthree));
 
 	ASSERT(cle_new(inst,name,object2,&object3) == 0);
 
 	ASSERT(cle_goto_object(inst,name,&object3) == 0);
 
 	pt = name;
-	st_update(t,&pt,objone,sizeof(objone));
+	st_update(t,&pt,(cdat) objone,sizeof(objone));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
 	ASSERT(cle_get_oid_str(inst,object1,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaab",13) == 0);
 
 	pt = name;
-	st_update(t,&pt,objtwo,sizeof(objtwo));
+	st_update(t,&pt,(cdat) objtwo,sizeof(objtwo));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
 	ASSERT(cle_get_oid_str(inst,object2,&oidstr) == 0);
 	ASSERT(memcmp(oidstr.chrs,"@abaaaaaaaaac",13) == 0);
 
 	pt = name;
-	st_update(t,&pt,objthree,sizeof(objthree));
+	st_update(t,&pt,(cdat) objthree,sizeof(objthree));
 	ASSERT(cle_goto_object(inst,name,&object) == 0);
 
 	ASSERT(cle_get_oid_str(inst,object3,&oidstr) == 0);
@@ -118,7 +118,7 @@ void test_instance_c()
 
 	// states
 	pt = name;
-	st_update(t,&pt,state1,sizeof(state1));
+	st_update(t,&pt,(cdat) state1,sizeof(state1));
 
 	ASSERT(cle_create_state(inst,object1,name) == 0);
 
@@ -128,10 +128,10 @@ void test_instance_c()
 
 	// but still owned by object 1
 	pt = object3;
-	ASSERT(cle_get_property_host(inst,&pt,state1,sizeof(state1)) == 2);
+	ASSERT(cle_get_property_host(inst,&pt,(cdat) state1,sizeof(state1)) == 2);
 
 	pt = name;
-	st_update(t,&pt,state2,sizeof(state2));
+	st_update(t,&pt,(cdat) state2,sizeof(state2));
 
 	ASSERT(cle_create_state(inst,object2,name) == 0);
 

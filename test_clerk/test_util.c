@@ -28,11 +28,16 @@
 #include "../cle_core/cle_runtime.h"
 
 static FILE* f;
-static void print_struct(page* pg, const key* me, int ind, int meoff) {
+static void print_struct(page* pg, const key* me, int ind, int meoff, int showsub) {
 	while (1) {
 		int i;
         
-		const char* path = KDATA(me);
+        if ((meoff & 0x8000) == 0 && (meoff < sizeof(page) || meoff > pg->used)) {
+            printf("out of bounds %d in %p\n", meoff, pg);
+            return;
+        }
+        
+		cdat path = KDATA(me);
 		int l = me->length;
 		int o = me->offset;
 		//int meoff = (int)((char*)me - (char*)pg->pg);
@@ -54,19 +59,19 @@ static void print_struct(page* pg, const key* me, int ind, int meoff) {
                 }
 				else
                  */
-                if (ind < 5) {
+                if (ind < 5 && (showsub & 2)) {
 					wrap = pt->pg;
 					printf(" (%d)>>\n", wrap->used);
-					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2, sizeof(page));
+					print_struct(wrap, GOKEY(wrap, sizeof(page)), ind + 2, sizeof(page), showsub);
 				} else
 					puts(">>");
 			} else {
 				fprintf(f, "(%s%d)(INT) page:%p + %d (%d - n:%d) >>\n", (*path & (0x80 >> (o & 7))) ? "+" : "-", pt->offset,
 						pt->pg, pt->koffset, meoff, pt->next);
                 
-                if (ind < 10) {
+                if (ind < 10 && (showsub & 1)) {
                     print_struct((page*) pt->pg, GOKEY((page*) pt->pg,
-                                                       pt->koffset), ind + 2, pt->koffset);
+                                                       pt->koffset), ind + 2, pt->koffset, showsub);
                 }
 			}
         } else {
@@ -86,7 +91,7 @@ static void print_struct(page* pg, const key* me, int ind, int meoff) {
                 
                 if (me->sub) {
                     fputs("] ->\n", f);
-                    print_struct(pg, GOOFF(pg, me->sub), ind + 1, me->sub);
+                    print_struct(pg, GOOFF(pg, me->sub), ind + 1, me->sub, showsub);
                 } else
                     fputs("]\n", f);
             }
@@ -104,11 +109,16 @@ static void print_struct(page* pg, const key* me, int ind, int meoff) {
 	}
 }
 
-void st_prt_page(st_ptr* pt) {
+void st_prt_page_showsub(st_ptr* pt, int showsub) {
 	f = stdout;
 	fprintf(f, "%p(%d/%d)\n", pt->pg->id, pt->pg->used, pt->pg->waste);
-	print_struct(pt->pg, GOOFF(pt->pg, pt->key), 0, pt->key);
+	print_struct(pt->pg, GOOFF(pt->pg, pt->key), 0, pt->key, showsub);
 }
+
+void st_prt_page(st_ptr* pt) {
+    st_prt_page_showsub(pt, 1);
+}
+
 
 int _tk_validate(page* pg, uint* kcount, ushort koff) {
 	while (koff != 0) {
@@ -170,7 +180,15 @@ static void calc_dist(page* pg, key* me, key* parent, int level) {
     
 	while (1) {
 		key* pme;
-		int offset = me->offset;
+		int offset;
+        
+        if (ISPTR(me) == 0 && ((long)me < (long)pg || (long) me > (long) pg + pg->used || ((long) me & 1 ))) {
+            puts("illegal key-ptr");
+            return;
+        }
+        
+        
+        offset = me->offset;
 
 		if (offset == 0) {
 			offset_zero++;
@@ -186,7 +204,7 @@ static void calc_dist(page* pg, key* me, key* parent, int level) {
 		}
 
 		if (parent == 0 && me->offset != 0) {
-			//printf("F1 ");
+//			printf("F1 ");
 		}
 
 		if (parent != 0 && ISPTR(parent) == 0 && me->offset > parent->length) {
@@ -196,10 +214,8 @@ static void calc_dist(page* pg, key* me, key* parent, int level) {
 		if (ISPTR(me)) {
 			//if(me->sub != 0)
 			{
-				ptr* pt = (ptr*) me;
-				st_ptr tmp;
 				page* pw = pg;
-				key* root = _tk_get_ptr(t, &pw, me);
+				key* root = _tk_get_ptr(t, &pw, me, 1);
 				//// keep page-wrapper (forever)
 				//pw->refcount++;
 				levels[level] += 1;
@@ -252,7 +268,7 @@ static void calc_dist(page* pg, key* me, key* parent, int level) {
 			tmp.key = sizeof(page);
 			tmp.offset = 0;
 			tmp.pg = pg;
-			st_prt_page(&tmp);
+			st_prt_page_showsub(&tmp, 0);
 			printf("F3 ");
 		}
 	}
@@ -261,6 +277,8 @@ static void calc_dist(page* pg, key* me, key* parent, int level) {
 void st_prt_distribution(st_ptr* pt, task* tsk) {
 	task_page* pw;
 	int i;
+    
+    _tk_check_ptr(tsk, pt);
 
 	t = tsk;
 
@@ -280,8 +298,6 @@ void st_prt_distribution(st_ptr* pt, task* tsk) {
 	//puts("\n");
 	//st_prt_page(pt);
 	//puts("\n");
-
-	tk_ref_ptr(pt);
 
 	calc_dist(pt->pg, GOKEY(pt->pg, pt->key), 0, 0);
 
@@ -330,7 +346,7 @@ void st_prt_distribution(st_ptr* pt, task* tsk) {
 		printf("ovf_used: %d\n", ovf_used);
 		printf("ovf_free: %d\n", ovf_free);
 		printf("mem used: %d\n", mem_used);
-		printf("mem idld: %d\n", mem_idle);
+		printf("mem idle: %d\n", mem_idle);
 	}
 }
 
@@ -400,7 +416,7 @@ st_ptr root(task* t) {
  [...] <- values
  */
 // code-header
-static void _cle_indent(uint indent, const char* str, uint length) {
+static void _cle_indent(uint indent, cdat str, uint length) {
 	while (indent-- > 0)
 		printf("  ");
 	printf("%.*s", length, str);
@@ -423,7 +439,7 @@ static void _cle_read(task* t, st_ptr* root, uint indent) {
 	}
 
 	if (elms)
-		_cle_indent(indent, "}\n", 2);
+		_cle_indent(indent, (cdat) "}\n", 2);
 	else
 		puts("");
 
@@ -604,10 +620,10 @@ void _rt_dump_function(task* t, st_ptr* root) {
 
 	puts("BEGIN_FUNCTION/EXPRESSION\nAnnotations:");
 
-	if (!st_move(t, &tmpptr, "A", 2)) // expr's dont have a.
+	if (!st_move(t, &tmpptr, (cdat) "A", 2)) // expr's dont have a.
 		_cle_read(t, &tmpptr, 0);
 
-	if (st_move(t, &strings, "S", 2)) {
+	if (st_move(t, &strings, (cdat) "S", 2)) {
 		err(__LINE__);
 		return;
 	}
@@ -616,7 +632,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 	//	_cle_read(&tmpptr,0);
 
 	tmpptr = *root;
-	if (st_move(t, &tmpptr, "B", 2)) {
+	if (st_move(t, &tmpptr, (cdat) "B", 2)) {
 		err(__LINE__);
 		return;
 	} else {
@@ -645,7 +661,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 
 	while (len > 0) {
 		opc = *bptr;
-		printf("%04d  ", (char*) bptr - (char*) bptr2);
+		printf("%04ld  ", (char*) bptr - (char*) bptr2);
 		len--;
 		bptr++;
 
@@ -744,7 +760,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 		case OP_STR:
 			// emit Is
 			tmpptr = strings;
-			if (st_move(t, &tmpptr, bptr, sizeof(ushort)))
+			if (st_move(t, &tmpptr, (cdat) bptr, sizeof(ushort)))
 				err(__LINE__);
 			else {
 				char buffer[200];
@@ -761,7 +777,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			tmpushort = *((ushort*) bptr);
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort) + 1;
-			printf("%-10s %d %04d\n", _rt_opc_name(opc), tmpuchar, tmpushort + (char*) bptr - (char*) bptr2);
+			printf("%-10s %d %04ld\n", _rt_opc_name(opc), tmpuchar, tmpushort + (char*) bptr - (char*) bptr2);
 			break;
 
 		case OP_BNZ:
@@ -772,7 +788,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			tmpushort = *((ushort*) bptr);
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
-			printf("%-10s %04d\n", _rt_opc_name(opc), tmpushort + (char*) bptr - (char*) bptr2);
+			printf("%-10s %04ld\n", _rt_opc_name(opc), tmpushort + (char*) bptr - (char*) bptr2);
 			break;
 
 		case OP_LOOP:
@@ -783,7 +799,7 @@ void _rt_dump_function(task* t, st_ptr* root) {
 			tmpushort = *((ushort*) bptr);
 			bptr += sizeof(ushort);
 			len -= sizeof(ushort);
-			printf("%-10s %04d\n", _rt_opc_name(opc), (char*) bptr - (char*) bptr2 - tmpushort);
+			printf("%-10s %04ld\n", _rt_opc_name(opc), (char*) bptr - (char*) bptr2 - tmpushort);
 			break;
 
 		case OP_FREE:

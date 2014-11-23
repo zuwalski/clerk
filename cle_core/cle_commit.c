@@ -26,6 +26,7 @@ struct _tk_setup {
 	page* dest;
 	task* t;
     
+	uint size_byte;
 	uint halfsize_byte;
     
 	ushort o_pt;
@@ -236,6 +237,55 @@ static uint _tk_cut_key(struct _tk_setup* setup, page* pw, key* copy, int prevpt
 	return size_remaining;
 }
 
+static uint _tk_cut_key2(struct _tk_setup* setup, page* pw, key* copy, int prevpt, int cut_adj, const int size) {
+    int size_remaining = sizeof(struct ptr);
+    int next = prevpt? GOOFF(pw, prevpt)->next : copy->sub;
+    
+    const int overflow = 8 * (size - setup->halfsize_byte * 2);
+    
+    if (overflow > 0) {
+        key* nxtnxt = GOOFF(pw, next);
+        
+        if (next && nxtnxt->offset < overflow) {
+            uint size_left = size;
+            
+            // step forward (cut a branch)
+            prevpt = next;
+            next = nxtnxt->next;
+            cut_adj = nxtnxt->offset;
+            
+        } else {
+            // cut a large key to bring down size
+            size_remaining += overflow / 8;
+            cut_adj += overflow;
+        }
+    }
+    
+    // get a fresh page
+    setup->dest = setup->t->ps->new_page(setup->t->psrc_data);
+    
+    // start compact-copy
+    _tk_root_copy(setup->dest, pw, copy, next, cut_adj);
+    setup->o_pt = 0;
+    
+    assert(setup->dest->used <= setup->dest->size);
+    
+	// cut-off 'copy'
+	copy->length = cut_adj;
+    
+	// link ext-pointer to new page
+    ushort link = _tk_link_and_create_page(setup, pw, cut_adj);
+    if (prevpt) {
+        // prev might have changed: recreate pointer
+        key* prev = GOOFF(pw, prevpt);
+        prev->next = link;
+    } else {
+        copy->sub = link;
+    }
+    
+	return size_remaining;
+}
+
 static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort kptr) {
     uint size = 0;
     
@@ -244,28 +294,28 @@ static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort
         size = _tk_measure_2(setup, pw, parent, k->next);
         k = GOOFF(pw,kptr);
         
-        if (size + sizeof(key) + CEILBYTE(parent->length - k->offset) > setup->halfsize_byte) {
+        if (size + sizeof(key) + CEILBYTE(parent->length - k->offset) > setup->size_byte) {
             // cut parent above k
-            size = _tk_cut_key(setup, pw, parent, kptr, k->offset + 1, size + sizeof(key) + CEILBYTE(parent->length - k->offset));
+            size = _tk_cut_key2(setup, pw, parent, kptr, k->offset + 1, size);
             
             // k might change if this is a ptr.
             k = GOOFF(pw,kptr);
         }
         
         if (ISPTR(k)) {
-            ptr* pt = (ptr*) k;
+            const ptr* pt = (ptr*) k;
             if (pt->koffset) {
                 return size + _tk_measure_2(setup, pt->pg, parent, pt->koffset);
             } else {
                 return size + sizeof(ptr);
             }
         } else if (k->length) {
-            uint nsize = 1 + sizeof(key) + CEILBYTE(k->length);
-            nsize += _tk_measure_2(setup, pw, k, k->sub);
+            const uint subsize = _tk_measure_2(setup, pw, k, k->sub);
+            uint nsize = subsize + 1 + sizeof(key) + CEILBYTE(k->length);
             
-            if (nsize > setup->halfsize_byte) {
+            if (nsize > setup->size_byte) {
                 // cut k below sub
-                nsize = _tk_cut_key(setup, pw, k, 0, 0, nsize);
+                nsize = _tk_cut_key2(setup, pw, k, 0, 0, subsize);
             }
             
             size += nsize;
@@ -314,9 +364,6 @@ static page* _cmt_mark_and_link(task* t) {
                     pt = (ptr*) GOOFF(parent, pt_off);
                     pt->koffset = sizeof(page);
                     pt->pg = find;
-                    
-                    // fix offset like mem-ptr
-                    //GOKEY(find,sizeof(page))->offset = pt->offset;
                 } else {
                     // ptr not found in parent
                     cle_panic(t);
@@ -351,6 +398,7 @@ int cmt_commit_task(task* t) {
         setup.t = t;
         setup.dest = 0;
         setup.halfsize_byte = root->size / 2;
+        setup.size_byte = root->size - sizeof(page);
         
         k = GOKEY(root, sizeof(page));
         int nsize = _tk_measure_2(&setup, root, k, k->sub);
@@ -360,9 +408,9 @@ int cmt_commit_task(task* t) {
         // reset and copy remaining rootpage
         setup.dest = t->ps->new_page(t->psrc_data);
         
-        
         k = GOKEY(root, sizeof(page));
         _tk_root_copy(setup.dest, root, k, k->sub, 0);
+        
         
         // avoid ptr-only-root-page problem
         k = GOKEY(setup.dest, sizeof(page));
@@ -370,8 +418,6 @@ int cmt_commit_task(task* t) {
             ptr* pt = (ptr*) k;
             t->ps->remove_page(t->psrc_data, setup.dest);
             setup.dest = pt->pg;
-        } else if(k->length == 0) {
-            puts("");
         }
 
         // swap root

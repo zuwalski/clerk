@@ -264,6 +264,8 @@ void test_struct_st() {
 	ASSERT(st_exist(t, &root, (cdat )"123490123456", 12));
 
 	ASSERT(st_empty(t, &to) == 0);
+    
+    st_prt_page(&root);
 
 	ASSERT(st_copy_st(t, &to, &root) == 0);
 
@@ -382,7 +384,7 @@ void test_iterate_c() {
 	}
 	stop = clock();
 
-	printf("it_new %d items. Time %d\n", i, stop - start);
+	printf("it_new %d items. Time %lu\n", i, stop - start);
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
@@ -396,7 +398,7 @@ void test_iterate_c() {
 	}
 	stop = clock();
 
-	printf("it_next %d items. Time %d\n", i, stop - start);
+	printf("it_next %d items. Time %lu\n", i, stop - start);
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
@@ -409,7 +411,7 @@ void test_iterate_c() {
 	}
 	stop = clock();
 
-	printf("it_prev %d items. Time %d\n", i, stop - start);
+	printf("it_prev %d items. Time %lu\n", i, stop - start);
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
@@ -444,7 +446,7 @@ void test_iterate_fixedlength() {
 	}
 	stop = clock();
 
-	printf("insert %d items. Time %d\n", i, stop - start);
+	printf("insert %d items. Time %lu\n", i, stop - start);
 
 	// run up and down
 	// create
@@ -457,7 +459,7 @@ void test_iterate_fixedlength() {
 	}
 	stop = clock();
 
-	printf("it_next[FIXED] %d items. Time %d\n", i, stop - start);
+	printf("it_next[FIXED] %d items. Time %lu\n", i, stop - start);
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
@@ -470,7 +472,7 @@ void test_iterate_fixedlength() {
 	}
 	stop = clock();
 
-	printf("it_prev[FIXED] %d items. Time %d\n", i, stop - start);
+	printf("it_prev[FIXED] %d items. Time %lu\n", i, stop - start);
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
@@ -511,7 +513,7 @@ void time_struct_c() {
 	}
 	stop = clock();
 
-	printf("insert %d items. Time %d\n", HIGH_ITERATION_COUNT, stop - start);
+	printf("insert %d items. Time %lu\n", HIGH_ITERATION_COUNT, stop - start);
 
 	// find them all
 	notfound = 0;
@@ -524,7 +526,7 @@ void time_struct_c() {
 
 	ASSERT(notfound == 0);
 
-	printf("exsist %d items. Time %d\n", HIGH_ITERATION_COUNT, stop - start);
+	printf("exsist %d items. Time %lu\n", HIGH_ITERATION_COUNT, stop - start);
 
 	// delete all items
 	start = clock();
@@ -533,7 +535,7 @@ void time_struct_c() {
 	}
 	stop = clock();
 
-	printf("delete %d items. Time %d\n", HIGH_ITERATION_COUNT, stop - start);
+	printf("delete %d items. Time %lu\n", HIGH_ITERATION_COUNT, stop - start);
 
 	// collection now empty again
 	ASSERT(st_is_empty(t, &root));
@@ -548,7 +550,7 @@ void time_struct_c() {
 
 	ASSERT(notfound == HIGH_ITERATION_COUNT);
 
-	printf("exsist (empty) %d items. Time %d\n", HIGH_ITERATION_COUNT, stop - start);
+	printf("exsist (empty) %d items. Time %lu\n", HIGH_ITERATION_COUNT, stop - start);
 
 	tk_drop_task(t);
 }
@@ -590,7 +592,7 @@ void test_task_c() {
 	}
 	stop = clock();
 
-	printf("(pre-commit)it_new. Time %d\n", stop - start);
+	printf("(pre-commit)it_new. Time %lu\n", stop - start);
 
 	it_reset(&it);
 
@@ -608,7 +610,7 @@ void test_task_c() {
 	// should have same count
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	printf("(pre-commit)it_next. Time %d\n", stop - start);
+	printf("(pre-commit)it_next. Time %lu\n", stop - start);
 
 	// destroy
 	it_dispose(t, &it);
@@ -618,7 +620,7 @@ void test_task_c() {
 	cmt_commit_task(t);
 	stop = clock();
 
-	printf("mempager: cmt_commit_task. Time %d - pages %d\n", stop - start, mempager_get_pagecount(pdata));
+	printf("mempager: cmt_commit_task. Time %lu - pages %d\n", stop - start, mempager_get_pagecount(pdata));
 
 	// new task, same source
 	t = tk_create_task(psource, pdata);
@@ -643,7 +645,7 @@ void test_task_c() {
 	// should have same count
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	printf("(commit)st_exsist. Time %d\n", stop - start);
+	printf("(commit)st_exsist. Time %lu\n", stop - start);
 
 	i = 0;
 	keystore[0] = 0;
@@ -659,7 +661,7 @@ void test_task_c() {
 	// should have same count
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	printf("(commit)it_next. Time %d\n", stop - start);
+	printf("(commit)it_next. Time %lu\n", stop - start);
 
 	// destroy
 	it_dispose(t, &it);
@@ -676,11 +678,6 @@ void test_task_c_2a() {
 	int i;
     //	uchar keystore[1000];
 	uchar keystore[100];
-    
-    cont_fixed = 0;
-    cont_notfixed = 0;
-    max_notfixed = 0;
-    copy_calls = 0;
 	
     cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
@@ -726,26 +723,26 @@ void test_task_c_2a() {
     
 	printf("pages %d\n", mempager_get_pagecount(pdata));
     
-    printf("copy_calls %d fixed %d non-fixed %d max_notfixed %d\n", copy_calls, cont_fixed, cont_notfixed, max_notfixed);
-    
 	t = tk_create_task(psource, pdata);
     
 	// set pagesource-root
 	tk_root_ptr(t, &root);
     
-	tk_ref_ptr(&root);
+    st_prt_distribution(&root, t);
     
     //st_prt_page(&root);
     
 	start = clock();
+    root.key |= 1;
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
 	}
 	stop = clock();
     
-	printf("1-commit Validate time (1) %lu\n", stop - start);
+	printf("1-commit Validate time (1 readonly) %lu\n", stop - start);
     
 	start = clock();
+    root.key &= 0xFFFE;
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
 	}
@@ -782,11 +779,6 @@ void test_task_c_2b() {
 	it_ptr it;
 	int i;
 	uchar keystore[100];
-    
-    cont_fixed = 0;
-    cont_notfixed = 0;
-    max_notfixed = 0;
-    copy_calls = 0;
 	
     cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
@@ -804,7 +796,7 @@ void test_task_c_2b() {
 		tmp = root;
 		memcpy(keystore, (char* )&i, sizeof(int));
 		st_insert(t, &tmp, (cdat) keystore, sizeof(keystore));
-        
+
 		cmt_commit_task(t);
 	}
 	stop = clock();
@@ -817,16 +809,10 @@ void test_task_c_2b() {
 	// should not happen.. but
 	ASSERT(t);
 	printf("pages %d\n", mempager_get_pagecount(pdata));
-    
-    printf("copy_calls %d fixed %d non-fixed %d max_notfixed %d\n", copy_calls, cont_fixed, cont_notfixed, max_notfixed);
 
 	// set pagesource-root
 	tk_root_ptr(t, &root);
-
-	//tk_ref_ptr(&root);
     
-    //st_prt_page(&root);
-
 	start = clock();
 	for (i = 0; i < HIGH_ITERATION_COUNT; i++) {
 		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
@@ -1043,6 +1029,8 @@ void test_tk_delta() {
 }
 
 void test_commit() {
+    clock_t start, stop;
+
     cle_pagesource* psource = &util_memory_pager;
 	cle_psrc_data pdata = util_create_mempager();
     
@@ -1071,7 +1059,6 @@ void test_commit() {
     int i;
     
     pg->id = 0;
-    pg->parent = 0;
     pg->size = sizeof(buffer);
     pg->used = sizeof(page);
     pg->waste = 0;
@@ -1119,7 +1106,7 @@ void test_commit() {
 	it_create(t, &it, &p);
     
 	while(it_next(t, 0, &it, 0)){
-        //printf("%*s\n", it.kused, it.kdata);
+        printf("%*s\n", it.kused, it.kdata);
         ASSERT(st_exist(t, &p, it.kdata, it.kused));
     }
     
@@ -1171,37 +1158,49 @@ void test_commit() {
 	// set pagesource-root
 	tk_root_ptr(t, &root);
 
-    rounds = 50000;
+    rounds = 500000;
     
     for(i = 0; i < rounds; ++i) {
         p = root;
         st_insert(t, &p, (cdat)&i, sizeof(int));
     }
     
-    /*
+	start = clock();
+	for (i = 0; i < rounds; i++) {
+		ASSERT(st_exist(t, &root, (cdat )&i, sizeof(int)));
+	}
+	stop = clock();
+    
+	printf("1 Time validate %lu\n", stop - start);
     puts("----");
 
     tk_root_ptr(t, &root);
-    st_prt_page(&root);
+    //st_prt_page_showsub(&root, 3);
+    st_prt_distribution(&root,t);
     
     puts("----");
-     */
     
+	start = clock();
     cmt_commit_task(t);
+	stop = clock();
+    
+	printf("Commit %lu\n", stop - start);
 
 	t = tk_create_task(psource, pdata);
     
 	// set pagesource-root
 	tk_root_ptr(t, &root);
     
-    st_prt_page(&root);
+    //st_prt_page_showsub(&root,3);
+    st_prt_distribution(&root,t);
 
+	start = clock();
     for(i = 0; i < rounds; ++i) {
-        if (i == 256) {
-            i = i;
-        }
         ASSERT(st_exist(t, &root, (cdat)&i, sizeof(int)));
     }
+	stop = clock();
+    
+	printf("2 Time validate %lu\n", stop - start);
 	
     tk_drop_task(t);
 }
@@ -1249,26 +1248,29 @@ int main(int argc, char* argv[]) {
     test_commit();
 
 	test_task_c_2a();
-
+    
 	test_task_c_2b();
-
+    
+    //
 
 	test_struct_c();
 
-	test_struct_st();
+	time_struct_c();
     
+	test_iterate_c();
+
+    test_iterate_fixedlength();
+
+	test_struct_st();
+
+
 
 
 	test_task_c_3();
 
 	test_tk_delta();
 
-	time_struct_c();
-
-	test_iterate_c();
-
-	test_iterate_fixedlength();
-
+    
 	test_task_c();
 
 

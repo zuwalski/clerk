@@ -177,7 +177,7 @@ void test_stream_c2() {
 		cle_close(ipt, 0, 0);
 	}
 	stop = clock();
-	printf("time: %d\n", (stop - start));
+	printf("time: %lu\n", (stop - start));
 
 	tk_drop_task(t);
 }
