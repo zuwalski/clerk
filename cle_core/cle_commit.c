@@ -188,55 +188,6 @@ static uint _tk_sizeof(page* pw, ushort kptr) {
  st_prt_page_showsub(&root, 1);
  */
 
-static uint _tk_cut_key(struct _tk_setup* setup, page* pw, key* copy, int prevpt, int cut_adj, const int size) {
-    int size_remaining = sizeof(struct ptr);
-    int next = prevpt? GOOFF(pw, prevpt)->next : copy->sub;
-    
-    const int overflow = 8 * (size - setup->halfsize_byte * 2);
-    
-    if (overflow > 0) {
-        key* nxtnxt = GOOFF(pw, next);
-
-        if (next && nxtnxt->offset < overflow) {
-            uint size_left = _tk_sizeof(pw, nxtnxt->sub);
-
-            // step forward (cut a branch)
-            prevpt = next;
-            next = nxtnxt->next;
-            cut_adj = nxtnxt->offset;
-            
-        } else {
-            // cut a large key to bring down size
-            size_remaining += overflow / 8;
-            cut_adj += overflow;
-        }
-    }
-    
-    // get a fresh page
-    setup->dest = setup->t->ps->new_page(setup->t->psrc_data);
-    
-    // start compact-copy
-    _tk_root_copy(setup->dest, pw, copy, next, cut_adj);
-    setup->o_pt = 0;
-    
-    assert(setup->dest->used <= setup->dest->size);
-
-	// cut-off 'copy'
-	copy->length = cut_adj;
-    
-	// link ext-pointer to new page
-    ushort link = _tk_link_and_create_page(setup, pw, cut_adj);
-    if (prevpt) {
-        // prev might have changed: recreate pointer
-        key* prev = GOOFF(pw, prevpt);
-        prev->next = link;
-    } else {
-        copy->sub = link;
-    }
-    
-	return size_remaining;
-}
-
 static uint _tk_cut_key2(struct _tk_setup* setup, page* pw, key* copy, int prevpt, int cut_adj, const int size) {
     int size_remaining = sizeof(struct ptr);
     int next = prevpt? GOOFF(pw, prevpt)->next : copy->sub;
@@ -294,7 +245,7 @@ static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort
         size = _tk_measure_2(setup, pw, parent, k->next);
         k = GOOFF(pw,kptr);
         
-        if (size + sizeof(key) + CEILBYTE(parent->length - k->offset) > setup->size_byte) {
+        if (size + sizeof(key) + CEILBYTE(parent->length - k->offset) > setup->halfsize_byte) {
             // cut parent above k
             size = _tk_cut_key2(setup, pw, parent, kptr, k->offset + 1, size);
             
@@ -313,7 +264,7 @@ static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort
             const uint subsize = _tk_measure_2(setup, pw, k, k->sub);
             uint nsize = subsize + 1 + sizeof(key) + CEILBYTE(k->length);
             
-            if (nsize > setup->size_byte) {
+            if (nsize > setup->halfsize_byte) {
                 // cut k below sub
                 nsize = _tk_cut_key2(setup, pw, k, 0, 0, subsize);
             }
