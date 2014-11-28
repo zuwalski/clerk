@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "cle_clerk.h"
 #include "cle_stream.h"
 #include "backends/cle_backends.h"
