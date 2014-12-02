@@ -49,6 +49,23 @@ void tk_mfree(task* t, void* mem) {
 	free(mem);
 }
 
+/**
+* Garbage-collector stubs
+* A cooperative collector
+* Only adress the current task
+*/
+void _tk_sweep(task* t) {
+	// re-build (clean) page-cache
+
+	// sweep un-reacable pages
+
+}
+
+// first mark all roots - then call sweep
+void _tk_mark_root(task* t, st_ptr pt) {
+
+}
+
 static task_page* _tk_alloc_page(task* t, uint page_size) {
 	task_page* pg = (task_page*) tk_malloc(t, page_size + sizeof(task_page) - sizeof(page));
 

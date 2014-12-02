@@ -466,7 +466,7 @@ static state _check_state(struct handler_node* h, state s, cdat msg, uint length
 			if (s != FAILED)
 				s = h->handler.pipe->end(h, 0, 0);
 			h->handler.pipe = &_ok_node;
-			if (s != DONE)
+			if (s > DONE)
 				break;
 			h = h->next;
 		} while (h);
@@ -476,7 +476,7 @@ static state _check_state(struct handler_node* h, state s, cdat msg, uint length
 		h->handler.pipe = &_copy_node;
 	}
 
-	if (s == DONE)
+	if (s == DONE || s == OK)
 		return DONE;
 
 	// Failed
