@@ -78,7 +78,6 @@ struct _scanner_ctx {
 };
 
 // forwards
-static void _push(struct task_common* cmn);
 static state _bh_next(void* v);
 
 // ok node begin
@@ -340,7 +339,9 @@ static struct task_common* _create_task_common(struct _scanner_ctx* ctx, cle_pip
 
 	st_empty(cmn->inst.t, &cmn->top);
 	cmn->free = 0;
-	_push(cmn);
+	cmn->out = (ptr_list*) tk_alloc(ctx->inst.t, sizeof(ptr_list), 0);
+	cmn->out->link = 0;
+	cmn->out->pt = cmn->top;
 
 	cmn->parent = 0;
 	cmn->childs = 0;
@@ -454,17 +455,21 @@ static state _check_state(struct handler_node* h, state s, cdat msg, uint length
 
 	if (s == DONE) {
 		do {
+			s = _need_start_call(h);
+
 			// if its a basic handler -> send any last input
-			if (h->handler.pipe->next_ptr != 0 && (!h->cmn->out->link || !st_is_empty(h->cmn->inst.t, &h->cmn->out->pt))) {
+			if (s == OK
+					&& h->handler.pipe->next_ptr != 0
+					&& (!st_is_empty(h->cmn->inst.t, &h->cmn->out->pt))) {
 				if (_bh_next(h) > DONE) {
 					s = FAILED;
 					break;
 				}
 			}
 
-			s = _need_start_call(h);
 			if (s != FAILED)
 				s = h->handler.pipe->end(h, 0, 0);
+
 			h->handler.pipe = &_ok_node;
 			if (s > DONE)
 				break;
@@ -636,22 +641,18 @@ uint cle_config_handler(task* t, st_ptr config, const cle_pipe* handler, enum ha
 
 // basic handler implementation
 
-static void _push(struct task_common* cmn) {
+static state _bh_push(void* v) {
+	struct handler_node* h = (struct handler_node*) v;
+	struct task_common* cmn = h->cmn;
 	ptr_list* l = cmn->free;
 	if (l)
 		cmn->free = l->link;
 	else
 		l = (ptr_list*) tk_alloc(cmn->inst.t, sizeof(ptr_list), 0);
 
+	l->pt = cmn->out->pt;
 	l->link = cmn->out;
 	cmn->out = l;
-
-	l->pt = cmn->top;
-}
-
-static state _bh_push(void* v) {
-	struct handler_node* h = (struct handler_node*) v;
-	_push(h->cmn);
 	return OK;
 }
 
@@ -665,20 +666,19 @@ static state _bh_pop(void* v) {
 
 	tmp->link = h->cmn->free;
 	h->cmn->free = tmp;
-
-	h->cmn->top = tmp->pt;
 	return OK;
 }
 
 static state _bh_data(void* v, cdat c, uint l) {
 	struct handler_node* h = (struct handler_node*) v;
-	return st_append(h->cmn->inst.t, &h->cmn->top, c, l) ? FAILED : OK;
+	st_insert(h->cmn->inst.t, &h->cmn->out->pt, c, l);
+	return OK;
 }
 
 static state _bh_next(void* v) {
 	struct handler_node* h = (struct handler_node*) v;
 
-	state s = h->handler.pipe->next_ptr(v, h->cmn->out->pt);
+	state s = h->handler.pipe->next_ptr(v, h->cmn->top);
 
 	st_empty(h->cmn->inst.t, &h->cmn->top);
 	h->cmn->out->pt = h->cmn->top;

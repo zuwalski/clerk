@@ -66,6 +66,12 @@ uint st_is_empty(task* t, st_ptr* pt);
 // test if path exsist from pt - else = 0
 uint st_exist(task* t, st_ptr* pt, cdat path, uint length);
 
+// make this ptr readonly
+void st_readonly(st_ptr* pt);
+
+// is this ptr readonly
+uint st_is_readonly(st_ptr* pt);
+
 // move ptr to path - else = 1
 uint st_move(task* t, st_ptr* pt, cdat path, uint length);
 

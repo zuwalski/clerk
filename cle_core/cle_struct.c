@@ -318,6 +318,15 @@ uint st_exist(task* t, st_ptr* pt, cdat path, uint length) {
 	return !_st_lookup(&rt);
 }
 
+void st_readonly(st_ptr* pt) {
+	pt->key |= 1;
+}
+
+uint st_is_readonly(st_ptr* pt) {
+	return pt->key & 1;
+}
+
+
 uint st_move(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
 

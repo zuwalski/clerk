@@ -6,6 +6,7 @@
 #include "backends/cle_backends.h"
 
 void cle_panic(task* t) {
+	fputs("PANIC", stderr);
 	exit(-1);
 }
 
@@ -26,7 +27,7 @@ state push(void* p) {
 }
 state data(void* p, cdat d, uint l) {
 	int i;
-	for (i = 0; i < l; i++) {
+	for (i = 0; i < l && d[i] != 0; i++) {
 		fputc(d[i], stdout);
 	}
 	return OK;
@@ -44,15 +45,17 @@ state test_start(void* p) {
 
 	cle_handler_get_env(p, &env);
 
-	resp_data(p, (cdat)"start: ", 7);
-
+	resp_data(p, (cdat) "start: ", 7);
 	resp_serialize(p, env.event);
-	
+	resp_data(p, (cdat) "\n", 1);
+
 	return OK;
 }
 
 state test_next(void* p, st_ptr ptr) {
+	resp_data(p, (cdat) "next: ", 6);
 	resp_serialize(p, ptr);
+	resp_data(p, (cdat) "\n", 1);
 	return OK;
 }
 
@@ -94,6 +97,10 @@ static int read_event(task* t, st_ptr ptr, FILE* f) {
 			if (in_comment)
 				break;
 			return ok_is_empty ? 1 : -1; // fire event -> stop reading
+		case '.':
+			if (in_comment)
+				break;
+			c = 0;
 		default:
 			if (!in_comment) {
 				st_append(t, &ptr, (cdat) &c, 1);
@@ -106,6 +113,10 @@ static int read_event(task* t, st_ptr ptr, FILE* f) {
 static void read_input(FILE* f, cle_stream* strm) {
 	int in_comment = 0;
 	int level = 0;
+
+	if (cle_push(strm) != OK)
+		return;
+
 	while (1) {
 		int c = fgetc(f);
 		switch (c) {
@@ -129,17 +140,19 @@ static void read_input(FILE* f, cle_stream* strm) {
 			break;
 		case '}':
 			if (!in_comment) {
-				if (level-- == 0)
+				if (cle_pop(strm) != OK)
 					return;
 
-				if (cle_pop(strm) != OK)
+				if (level-- <= 0)
 					return;
 			}
 			break;
 		case ';':
 			if (!in_comment) {
-				cle_pop(strm);
-				cle_push(strm);
+				if (cle_pop(strm) != OK)
+					return;
+				if (cle_push(strm) != OK)
+					return;
 			}
 			break;
 		default:

@@ -26,8 +26,11 @@
 
 #define HIGH_ITERATION_COUNT 1000000
 
-//#define ASSERT(expr) if((expr) == 0) {printf("assert failed line %d in %s\n",__LINE__,__FILE__);return;}
+#ifdef NDEBUG
+#define ASSERT(expr) if((expr) == 0) {printf("assert failed line %d in %s\n",__LINE__,__FILE__);return;}
+#else
 #define ASSERT(e) assert(e)
+#endif
 
 void st_prt_page(st_ptr* pt);
 
