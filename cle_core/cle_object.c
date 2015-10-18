@@ -115,7 +115,7 @@ int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint), vo
 				state = 1;
 			}
 			buffer[i++] = c;
-		} while (state != 0 && i < sizeof(buffer));
+		} while (c != 0 && state != 0 && i < sizeof(buffer));
 
 		if ((i = fun(ctx, buffer, i)))
 			return i;

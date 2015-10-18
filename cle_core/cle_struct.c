@@ -18,9 +18,10 @@
 #include <string.h>
 
 #include "cle_struct.h"
+#include <assert.h>
 
 // TODO replace lzc with intrincis 
-
+// TODO replace <prev><sub> with offset-ints to avoid pointer-fixing on pg-updates
 
 struct _st_lkup_res {
 	task* t;
@@ -59,10 +60,9 @@ static uint _st_lookup(struct _st_lkup_res* rt) {
 			curr--;
 		}
 		rt->path = curr;
-        
-        
+
         //TODO use intrinsic lzcnt
-        
+
 		// fold 1's after msb
 		d |= (d >> 1);
 		d |= (d >> 2);
@@ -192,6 +192,8 @@ static void _st_write(struct _st_lkup_res* rt) {
 
 		rt->diff = rt->sub->length;
 		size -= length;
+
+		assert(rt->pg->used <= rt->pg->size);
 		if (size == 0)	// no remaining data?
 			return;
 
@@ -248,6 +250,8 @@ static void _st_write(struct _st_lkup_res* rt) {
 		rt->path += length >> 3;
 		size -= pgsize - sizeof(key);
 	} while (size);
+
+	assert(rt->pg->used <= rt->pg->size);
 }
 
 static void _pt_move(st_ptr* pt, struct _st_lkup_res* rt) {
@@ -276,14 +280,14 @@ static struct _st_lkup_res _init_res(task* t, st_ptr* pt, cdat path, uint length
 uint st_empty(task* t, st_ptr* pt) {
     task_page* pg = t->stack;
     ushort kpt = pg->pg.used;
-    
+
     kpt += 1 & kpt; // align
     if (kpt + sizeof(key) >= pg->pg.size) {
         _tk_stack_new(t);
         pg = t->stack;
         kpt = pg->pg.used;
     }
-    
+
     pt->pg = &pg->pg;
     pg->pg.used = kpt + sizeof(key);
 
@@ -338,7 +342,7 @@ uint st_move(task* t, st_ptr* pt, cdat path, uint length) {
 
 uint st_insert(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
-    
+
     if (rt.readonly) {
         return -1;
     }
@@ -394,11 +398,11 @@ static struct _prepare_update _st_prepare_update(struct _st_lkup_res* rt, task* 
 uint st_update(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt;
 	struct _prepare_update pu;
-    
+
     if (pt->key & 1) {
         return -1;
     }
-    
+
     pu = _st_prepare_update(&rt, t, pt);
 
 	if (length > 0) {
@@ -492,22 +496,22 @@ uint st_delete(task* t, st_ptr* pt, cdat path, uint length) {
 
 uint st_clear(task* t, st_ptr* pt) {
 	struct _st_lkup_res rt;
-    
+
     if (pt->key & 1) {
         return -1;
     }
-    
+
 	_st_prepare_update(&rt, t, pt);
 	return 0;
 }
 
 uint st_dataupdate(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, 0, 0);
-    
+
     if (rt.readonly) {
         return -1;
     }
-    
+
 	if (length > 0)
 		_st_make_writable(&rt);
 
@@ -567,11 +571,11 @@ uint st_link(task* t, st_ptr* to, st_ptr* from) {
 
 uint st_append(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
-    
+
     if (rt.readonly) {
         return -1;
     }
-	
+
     rt.diff = rt.sub->length;
 
 	if (rt.sub->sub) {
@@ -778,6 +782,17 @@ int st_scan(task* t, st_ptr* pt) {
 	}
 }
 
+st_ptr str(task* t, const char* cs) {
+	st_ptr pt, org;
+
+	st_empty(t, &pt);
+	org = pt;
+
+	st_insert(t, &pt, (cdat) cs, (uint)strlen(cs));
+
+	return org;
+}
+
 static uint _dont_use(void* ctx) {
 	return -2;
 }
@@ -833,11 +848,11 @@ static uint _ins_st(void* p, cdat txt, uint len, uint at) {
 uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 	struct _st_insert sins;
 	uint ret;
-    
+
     if (to->key & 1) {
         return -1;
     }
-    
+
 	sins.rt.t = t;
 	sins.rt.pg = _tk_check_ptr(t, to);
 	sins.rt.sub = GOOFF(to->pg,to->key);
@@ -853,18 +868,18 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 
 int st_exist_st(task* t, st_ptr* p1, st_ptr* p2) {
 	struct st_stream* snd = st_exist_stream(t, p1);
-    
+
 	uint ret = st_map_st(t, p2, (uint(*)(void*, cdat, uint, uint))st_stream_data, (uint(*)(void*))st_stream_push, (uint(*)(void*))st_stream_pop, snd);
-    
+
 	st_destroy_stream(snd);
 	return (ret == 0);
 }
 
 uint st_copy_st(task* t, st_ptr* to, st_ptr* from) {
 	struct st_stream* snd = st_merge_stream(t, to);
-    
+
 	uint ret = snd && st_map_st(t, from, (uint(*)(void*, cdat, uint, uint))st_stream_data, (uint(*)(void*))st_stream_push, (uint(*)(void*))st_stream_pop, snd);
-    
+
 	st_destroy_stream(snd);
 	return ret;
 }
@@ -896,37 +911,37 @@ static uint _st_worker(struct _st_map_worker_struct* work, page* pg, key* me, ke
         uint at;
     } mx[16];
     uint ret = 0, idx = 0;
-    
+
     while (1) {
         const uint klen = ((nxt != 0 ? nxt->offset : me->length) >> 3) - offset;
         if (klen != 0 && (ret = work->dat(work->ctx, KDATA(me) + offset, klen, at)))
             break;
         at += klen;
-        
+
         if(nxt == 0) {
             if (idx-- == 0)
                 break;
-            
+
             pg = _tk_check_page(work->t, mx[idx].pg);
             nxt = mx[idx].nxt;
             at = mx[idx].at;
         } else if (me->length != nxt->offset) {
             if((ret = work->push(work->ctx))) break;
-            
+
             if ((idx & 0xF0) == 0) {
                 mx[idx].nxt = nxt;
                 mx[idx].pg = pg;
                 mx[idx].at = at;
                 ++idx;
-                
+
                 offset = nxt->offset >> 3;
                 nxt = nxt->next? GOOFF(pg, nxt->next) : 0;
                 continue;
             }
-            
+
             if((ret = _st_worker(work, pg, me, nxt, offset, at))) break;
         }
-        
+
         if((ret = work->pop(work->ctx))) break;
 
         me = (ISPTR(nxt)) ? _tk_get_ptr(work->t, &pg, nxt, 1) : nxt;
@@ -954,7 +969,7 @@ static uint _st_map_worker(struct _st_map_worker_struct* work, page* pg, key* me
 		}
 
 		if (nxt == 0) {
-			_map_pop: if ((ret = work->pop(work->ctx)) || idx-- == 0)
+			_map_pop: if (idx-- == 0 || (ret = work->pop(work->ctx)))
 				break;
 
 			at = mx[idx].at;
@@ -1094,8 +1109,18 @@ uint st_destroy_stream(struct st_stream* ctx) {
 
 uint st_stream_data(struct st_stream* ctx, cdat dat, uint length, uint at) {
 	struct _st_lkup_res* rt = &ctx->top[ctx->idx];
+	page* old = rt->pg;
 	rt->path = dat;
 	rt->length = length << 3;
+	rt->pg = _tk_check_page(ctx->t, rt->pg);
+	if(rt->pg != old) {
+		/* fix pointers */
+		if (rt->prev)
+			rt->prev = GOKEY(rt->pg,(char*)rt->prev - (char*)old);
+
+		if (rt->sub)
+			rt->sub = GOKEY(rt->pg,(char*)rt->sub - (char*)old);
+	}
 	return ctx->dat_fun(rt);
 }
 

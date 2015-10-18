@@ -52,7 +52,7 @@ void tk_mfree(task* t, void* mem) {
 /**
 * Garbage-collector stubs
 * A cooperative collector
-* Only adress the current task
+* Only address the current task
 */
 void _tk_sweep(task* t) {
 	// re-build (clean) page-cache
@@ -190,7 +190,7 @@ page* _tk_write_copy(task* t, page* pg) {
     struct tk_page_map pm;
 	st_ptr root_ptr, tmp;
 	task_page* tpg;
-    
+
 	if (pg->id != pg)
 		return pg;
     
@@ -221,8 +221,8 @@ page* _tk_write_copy(task* t, page* pg) {
     t->wpages = tpg;
     
     st_dataupdate(t, &root_ptr, (cdat) &pm.wcopy, sizeof(page*));
-    
-    return pm.wcopy;
+
+	return pm.wcopy;
 }
 
 key* _tk_get_ptr(task* t, page** pg, key* me, const int readonly) {

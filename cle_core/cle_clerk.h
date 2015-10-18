@@ -116,6 +116,9 @@ int st_get(task* t, st_ptr* pt, char* buffer, uint buffer_length);
 // read next char from pt and advance
 int st_scan(task* t, st_ptr* pt);
 
+// Convenience-function for static strings
+st_ptr str(task* t, const char* cs);
+
 //char* st_get_all(task* t, st_ptr* pt, uint* length);
 
 /* iterator functions */

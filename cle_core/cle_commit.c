@@ -138,7 +138,7 @@ void test_measure(task* t, st_ptr src) {
 static ushort _tk_link_and_create_page(struct _tk_setup* setup, page* pw, int ptr_offset) {
 	ptr* pt;
     
-	// no large enough exsisting key?
+	// no large enough existing key?
 	if (setup->o_pt == 0) {
 		setup->o_pt = _tk_alloc_ptr(setup->t, TO_TASK_PAGE(pw) ); // might change ptr-address!
 	}

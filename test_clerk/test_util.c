@@ -378,17 +378,6 @@ uint sim_new(uchar kdata[], uint ksize) {
 	return kdata[0] + 2;
 }
 
-st_ptr str(task* t, char* cs) {
-	st_ptr pt, org;
-
-	st_empty(t, &pt);
-	org = pt;
-
-	st_insert(t, &pt, (cdat) cs, (uint)strlen(cs));
-
-	return org;
-}
-
 uint add(task* t, st_ptr p, char* cs){
     return st_insert(t, &p, (cdat)cs, (uint)strlen(cs));
 }
