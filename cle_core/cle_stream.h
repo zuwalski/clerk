@@ -67,12 +67,12 @@ state cle_data(cle_stream* ipt, cdat data, uint len);
 
 struct handler_env {
 	cle_instance inst;
+	st_ptr handler_root;
 	st_ptr event_rest;
 	st_ptr event;
 	st_ptr roles;
 	st_ptr user;
 	void* data;
-	oid id;
 };
 
 void cle_handler_get_env(const void* p, struct handler_env* env);

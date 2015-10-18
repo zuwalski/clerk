@@ -163,6 +163,9 @@ static int read_event(task* t, st_ptr ptr, FILE* f) {
 			return ok_is_empty ? -1 : 0;
 		case '\n':	// white-space
 		case '\r':
+			if (ok_is_empty)
+				return 1;
+			/* no break */
 		case '\t':
 		case ' ':
 			break;
