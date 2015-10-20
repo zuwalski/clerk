@@ -107,7 +107,8 @@ state start(void* p) {
 }
 state next(void* p) {
 	_tracker_reset(p);
-	return OK;
+
+	return start(p);
 }
 state pop(void* p) {
 	_tracker_pop(p);
@@ -235,12 +236,6 @@ static void read_input(FILE* f, cle_stream* strm) {
 		case '\'':
 			c = read_string(f, strm, c);
 			continue;
-		case '{':
-			ok_is_empty = 0;
-			cle_push(strm);
-
-			level++;
-			break;
 		case '}':
 			if (ok_is_empty) {
 				c = 0;
@@ -251,6 +246,16 @@ static void read_input(FILE* f, cle_stream* strm) {
 
 			if (--level <= 0)
 				return;
+			break;
+		case '{':
+			if (ok_is_empty) {
+				c = 0;
+				cle_data(strm, (cdat) &c, 1);
+			}
+			ok_is_empty = 0;
+			cle_push(strm);
+
+			level++;
 			break;
 		case ',':
 		case ';':
@@ -276,6 +281,8 @@ static void read_input(FILE* f, cle_stream* strm) {
 	}
 }
 
+static cle_pipe eval_handler;
+
 static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr userid,
 		st_ptr user_roles) {
 	while (1) {
@@ -294,7 +301,7 @@ static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr userid,
 			cle_pipe_inst out = { &pout, &out_state };
 
 			cle_stream* strm = cle_open(t, config, event, userid, user_roles,
-					out);
+					out, &eval_handler);
 			if (strm) {
 				out_state.tipp = 0;
 
@@ -370,7 +377,7 @@ static state read_stream_start(void* p) {
 	st_ptr root = env.inst.root;
 
 	if (st_move_st(env.inst.t, &root, &env.event_rest) == 0) {
-		resp_serialize(p, root);
+		resp_next_ptr(p, root);
 	}
 
 	return OK;
@@ -422,6 +429,21 @@ static const cle_pipe check_handler = { exist_stream_start, stream_next,
 static cle_pipe read_handler;
 static cle_pipe quit_handler;
 
+static state eval_start(void* p) {
+	struct handler_env env;
+	cle_handler_get_env(p, &env);
+
+	return resp_next_ptr(p, env.handler_root);
+}
+
+static state eval_next(void* p, st_ptr pt) {
+	return resp_next_ptr(p, pt);
+}
+
+static state eval_end(void* p, cdat d, uint l) {
+	return l == 0 ? DONE : FAILED;
+}
+
 int main(int argc, char* argv[]) {
 	FILE* input = stdin;
 	cle_pagesource* psource = &util_memory_pager;
@@ -465,6 +487,8 @@ int main(int argc, char* argv[]) {
 	// sys.dump{file=name}
 	// sys.read
 	// sys.source
+
+	eval_handler = cle_basic_handler(eval_start, eval_next, eval_end);
 
 	read_cmds(parent, input, config, userid, user_roles);
 

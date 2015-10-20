@@ -855,7 +855,7 @@ uint st_insert_st(task* t, st_ptr* to, st_ptr* from) {
 
 	sins.rt.t = t;
 	sins.rt.pg = _tk_check_ptr(t, to);
-	sins.rt.sub = GOOFF(to->pg,to->key);
+	sins.rt.sub = GOOFF(to->pg,to->key & 0xFFFE);
 	sins.rt.diff = to->offset;
 	sins.have_written = 0;
 
@@ -1019,7 +1019,7 @@ uint st_map_st(task* t, st_ptr* from, uint (*dat)(void*, cdat, uint, uint), uint
 
 	_tk_check_ptr(t, from);
 
-	return _st_map_worker(&work, from->pg, GOOFF(from->pg,from->key), _trace_nxt(from), from->offset, 0);
+	return _st_map_worker(&work, from->pg, GOOFF(from->pg,from->key & 0xFFFE), _trace_nxt(from), from->offset, 0);
 }
 
 // sending functions

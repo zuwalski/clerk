@@ -1,4 +1,5 @@
-#include <cle_clerk.h>
+#include "cle_clerk.h"
+#include "cle_stream.h"
 
 #include <stdio.h>
 
@@ -117,3 +118,7 @@ uint cle_eval_lib(task* t, cle_env* parent, st_ptr lib, cdat fn, uint length) {
 	// and eval
 	return _eval(t, &env, lib);
 }
+//
+//cle_pipe create_eval_handler() {
+//	return cle_basic_handler(start,next,end);
+//}

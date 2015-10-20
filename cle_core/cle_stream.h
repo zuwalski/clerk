@@ -19,7 +19,6 @@
 #define __CLE_STREAM_H__
 
 #include "cle_clerk.h"
-#include "cle_object.h"
 
 /*
  *	The main input-interface to the running system
@@ -50,6 +49,11 @@ typedef struct cle_pipe_inst {
 	void* data;
 } cle_pipe_inst;
 
+typedef struct {
+	task* t;
+	st_ptr root;
+} cle_instance;
+
 /* pipe interface end */
 
 /* event input functions */
@@ -57,7 +61,7 @@ typedef struct cle_pipe_inst {
 typedef struct handler_node cle_stream;
 typedef void* pcle_stream;
 
-cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response);
+cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response, const cle_pipe *handler);
 
 state cle_close(cle_stream* ipt, cdat msg, uint len);
 state cle_next(cle_stream* ipt);
@@ -84,7 +88,7 @@ state resp_data(void* p, cdat c, uint l);
 state resp_next(void* p);
 state resp_push(void* p);
 state resp_pop(void* p);
-state resp_serialize(void* v, st_ptr pt);
+state resp_next_ptr(void* v, st_ptr pt);
 
 uint cle_config_handler(task* t, st_ptr config, const cle_pipe* handler, enum handler_type type);
 

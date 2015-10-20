@@ -90,7 +90,7 @@ static uint bh_start(void* p) {
 
 static uint bh_next(void* p, st_ptr pt) {
 	//puts("bh_next");
-	resp_serialize(p, pt);
+	resp_next_ptr(p, pt);
 	resp_next(p);
 	return 0;
 }
