@@ -108,7 +108,7 @@ static state _ok_push(void* v) {
 static state _ok_data(void* v, cdat c, uint l) {
 	return OK;
 }
-static state _ok_next_ptr(void* p, st_ptr ptr){
+static state _ok_next_ptr(void* p, st_ptr ptr) {
 	return OK;
 }
 
@@ -158,7 +158,8 @@ static const cle_pipe _response_node = { _rn_start, _rn_next, _rn_end, _rn_pop,
 
  ****************************************************/
 
-int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint), void* ctx) {
+int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint),
+		void* ctx) {
 	uchar buffer[100];
 	int state = 2;
 	while (1) {
@@ -391,10 +392,6 @@ static struct task_common* _create_task_common(struct _scanner_ctx* ctx,
 
 	cmn->parent = 0;
 	cmn->childs = 0;
-	_add_child(cmn, 0);
-	_add_child(cmn, 0);
-	_add_child(cmn, 0);
-	_add_child(cmn, 0);
 	return cmn;
 }
 
@@ -500,7 +497,11 @@ static state _need_start_call(struct handler_node* h) {
 	if (h->flags == 0) {
 		h->flags |= 2;
 		s = h->handler.pipe->start(h);
+	} else if (h->flags & 4) {
+		h->flags ^= 4;
+		s = h->handler.pipe->next(h);
 	}
+
 	return s;
 }
 
@@ -609,7 +610,8 @@ state cle_close(cle_stream* ipt, cdat msg, uint len) {
 }
 
 state cle_next(cle_stream* ipt) {
-	return _check_handler(ipt, ipt->handler.pipe->next);
+	ipt->flags |= 4;
+	return OK; //_check_handler(ipt, ipt->handler.pipe->next);
 }
 
 state cle_pop(cle_stream* ipt) {
@@ -660,7 +662,9 @@ state resp_data(void* p, cdat c, uint l) {
 }
 state resp_next(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
-	return _check_handler(h->next, h->next->handler.pipe->next);
+	h->flags |= 4;
+
+	return OK; //_check_handler(h->next, h->next->handler.pipe->next);
 }
 state resp_push(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
@@ -680,7 +684,8 @@ state resp_next_ptr(void* v, st_ptr pt) {
 	if (s == OK) {
 		st_readonly(&pt);
 
-		if (h->next->handler.pipe->next_ptr)
+		if (h->next->handler.pipe->next_ptr &&
+				st_is_empty(h->cmn->inst.t, &h->cmn->top))
 			s = h->next->handler.pipe->next_ptr(h->next, pt);
 		else
 			s = st_map_st(h->cmn->inst.t, &pt, _data_serializer,
@@ -688,7 +693,7 @@ state resp_next_ptr(void* v, st_ptr pt) {
 					h->next);
 	}
 
-	return resp_next(v);
+	return OK;
 }
 
 // add handler to config
@@ -750,11 +755,14 @@ static state _bh_data(void* v, cdat c, uint l) {
 
 static state _bh_next(void* v) {
 	struct handler_node* h = (struct handler_node*) v;
+	state s = OK;
 
-	state s = h->handler.pipe->next_ptr(v, h->cmn->top);
+	if (st_is_empty(h->cmn->inst.t, &h->cmn->top) == 0) {
+		s = h->handler.pipe->next_ptr(v, h->cmn->top);
 
-	st_empty(h->cmn->inst.t, &h->cmn->top);
-	h->cmn->out->pt = h->cmn->top;
+		st_empty(h->cmn->inst.t, &h->cmn->top);
+		h->cmn->out->pt = h->cmn->top;
+	}
 	return s;
 }
 
