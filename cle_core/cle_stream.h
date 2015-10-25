@@ -27,7 +27,7 @@
 
 /* pipe interface begin */
 typedef enum handler_state {
-	OK = 0, DONE = 1, FAILED = 2, LEAVE = 3
+	OK = 0, END = 1, FAILED = 2, LEAVE = 3
 } state;
 
 typedef enum handler_type {
@@ -61,7 +61,7 @@ typedef struct {
 typedef struct handler_node cle_stream;
 typedef void* pcle_stream;
 
-cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid, st_ptr user_roles, cle_pipe_inst response, const cle_pipe *handler);
+cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr user_roles, cle_pipe_inst response, const cle_pipe *handler);
 
 state cle_close(cle_stream* ipt, cdat msg, uint len);
 state cle_next(cle_stream* ipt);
@@ -75,7 +75,6 @@ struct handler_env {
 	st_ptr event_rest;
 	st_ptr event;
 	st_ptr roles;
-	st_ptr user;
 	void* data;
 };
 
@@ -88,7 +87,8 @@ state resp_data(void* p, cdat c, uint l);
 state resp_next(void* p);
 state resp_push(void* p);
 state resp_pop(void* p);
-state resp_next_ptr(void* v, st_ptr pt);
+state resp_ptr(void* v, st_ptr pt);
+state resp_ptr_next(void* v, st_ptr pt);
 
 uint cle_config_handler(task* t, st_ptr config, const cle_pipe* handler, enum handler_type type);
 

@@ -322,8 +322,9 @@ uint st_exist(task* t, st_ptr* pt, cdat path, uint length) {
 	return !_st_lookup(&rt);
 }
 
-void st_readonly(st_ptr* pt) {
+st_ptr st_readonly(st_ptr* pt) {
 	pt->key |= 1;
+	return *pt;
 }
 
 uint st_is_readonly(st_ptr* pt) {
@@ -788,7 +789,7 @@ st_ptr str(task* t, const char* cs) {
 	st_empty(t, &pt);
 	org = pt;
 
-	st_insert(t, &pt, (cdat) cs, (uint)strlen(cs));
+	st_insert(t, &pt, (cdat) cs, (uint)strlen(cs) + 1);
 
 	return org;
 }

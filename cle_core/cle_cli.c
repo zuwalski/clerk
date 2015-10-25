@@ -45,7 +45,7 @@ static void _tracker_field_end(void* p) {
 	}
 
 	if ((out->points[field_begin] & 0x4000) == 0) {
-		if (branch) {
+		if (branch || field_begin == 0) {
 			out->points[field_begin] |= 0x4000;
 			fputc('{', stdout);
 		} else {
@@ -78,7 +78,10 @@ static void _tracker_pop(void* p) {
 	}
 
 	if (field_sep == 0x8000) {
-		fputc(',', stdout);
+		if (out->ptip == 0)
+			fprintf(stdout, "{}");
+		else
+			fputc(',', stdout);
 	}
 
 	out->tipp = out->points[out->ptip] & 0x3FFF;
@@ -95,20 +98,22 @@ static void _tracker_reset(void* p) {
 
 	while (out->ptip > 0)
 		_tracker_pop(p);
+
+	out->tipp = 0;
+	out->ptip = 1;
+	out->points[0] = 0x8000;
 }
 
 state start(void* p) {
 	struct output_state* out = (struct output_state*) p;
 	out->tipp = 0;
 	out->ptip = 1;
-	out->points[0] = 0xC000;
-	fputc('{', stdout);
+	out->points[0] = 0x8000;
 	return OK;
 }
 state next(void* p) {
 	_tracker_reset(p);
-
-	return start(p);
+	return OK;
 }
 state pop(void* p) {
 	_tracker_pop(p);
@@ -129,13 +134,15 @@ state data(void* p, cdat d, uint l) {
 	return OK;
 }
 state end(void* p, cdat d, uint l) {
+	struct output_state* out = (struct output_state*) p;
+
 	if (l > 0) {
 		fprintf(stderr, "ERROR: %.*s\n", l, d);
 		return FAILED;
-	} else {
-		_tracker_reset(p);
-		return DONE;
 	}
+
+	_tracker_reset(p);
+	return END;
 }
 
 static const cle_pipe pout = { start, next, end, pop, push, data, 0 };
@@ -178,7 +185,7 @@ static int read_event(task* t, st_ptr ptr, FILE* f) {
 		case '{':
 			return ok_is_empty ? 2 : -1; // fire event -> continue reading
 		case ';':
-			return ok_is_empty ? 1 : -1; // fire event -> stop reading
+			return ok_is_empty ? 3 : -1; // fire event -> stop reading
 		case '.':
 		case '/':
 			if (!ok_is_empty)
@@ -283,8 +290,7 @@ static void read_input(FILE* f, cle_stream* strm) {
 
 static cle_pipe eval_handler;
 
-static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr userid,
-		st_ptr user_roles) {
+static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr user_roles) {
 	while (1) {
 		int reader_state;
 		task* t = tk_clone_task(parent);
@@ -300,24 +306,24 @@ static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr userid,
 			struct output_state out_state;
 			cle_pipe_inst out = { &pout, &out_state };
 
-			cle_stream* strm = cle_open(t, config, event, userid, user_roles,
-					out, &eval_handler);
+			cle_stream* strm = cle_open(t, config, event, user_roles, out,
+					&eval_handler);
 			if (strm) {
-				out_state.tipp = 0;
-
 				if (reader_state == 2)
 					read_input(f, strm);
 
 				cle_close(strm, 0, 0);
 			} else {
-				fprintf(stderr, "\nopen failed\n");
+				fprintf(stderr, "open failed\n");
 			}
 		} else {
-			fprintf(stderr, "\nread failed\n");
+			fprintf(stderr, "read failed\n");
 		}
 
 		// clear input
-		flush_line(f);
+		if (reader_state != 1) {
+			flush_line(f);
+		}
 
 		tk_drop_task(t);
 	}
@@ -377,7 +383,7 @@ static state read_stream_start(void* p) {
 	st_ptr root = env.inst.root;
 
 	if (st_move_st(env.inst.t, &root, &env.event_rest) == 0) {
-		resp_next_ptr(p, root);
+		resp_ptr_next(p, root);
 	}
 
 	return OK;
@@ -399,7 +405,7 @@ static state stream_next(void* p) {
 static state stream_end(void* p, cdat d, uint l) {
 	struct st_stream* strm = (struct st_stream*) cle_handler_get_data(p);
 	st_destroy_stream(strm);
-	return l == 0 ? DONE : FAILED;
+	return l == 0 ? END : FAILED;
 }
 
 static state stream_pop(void* p) {
@@ -432,16 +438,15 @@ static cle_pipe quit_handler;
 static state eval_start(void* p) {
 	struct handler_env env;
 	cle_handler_get_env(p, &env);
-
-	return resp_next_ptr(p, env.handler_root);
+	return resp_ptr_next(p, env.handler_root);
 }
 
 static state eval_next(void* p, st_ptr pt) {
-	return resp_next_ptr(p, pt);
+	return resp_ptr_next(p, pt);
 }
 
 static state eval_end(void* p, cdat d, uint l) {
-	return l == 0 ? DONE : FAILED;
+	return l == 0 ? END : FAILED;
 }
 
 int main(int argc, char* argv[]) {
@@ -453,11 +458,9 @@ int main(int argc, char* argv[]) {
 
 	task* parent = tk_create_task(psource, pdata);
 
-	st_ptr config, userid, user_roles, pt;
+	st_ptr config, pt;
 
 	st_empty(parent, &config);
-	st_empty(parent, &user_roles);
-	st_empty(parent, &userid);
 
 	pt = config;
 	st_insert(parent, &pt, (cdat) "sys\0merge", 10);
@@ -490,7 +493,7 @@ int main(int argc, char* argv[]) {
 
 	eval_handler = cle_basic_handler(eval_start, eval_next, eval_end);
 
-	read_cmds(parent, input, config, userid, user_roles);
+	read_cmds(parent, input, config, str(parent, "sa"));
 
 	tk_drop_task(parent);
 

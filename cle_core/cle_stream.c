@@ -42,7 +42,6 @@ struct task_common {
 	cle_instance inst;
 	st_ptr event_name;
 	st_ptr user_roles;
-	st_ptr userid;
 	st_ptr config;
 	ptr_list* free;
 	ptr_list* out;
@@ -72,7 +71,6 @@ struct _scanner_ctx {
 	st_ptr event_name_base;
 	st_ptr event_name;
 	st_ptr user_roles;
-	st_ptr userid;
 	st_ptr evt;
 	st_ptr sys;
 	uint allowed;
@@ -81,9 +79,12 @@ struct _scanner_ctx {
 // fixed ids
 
 static const uchar ID_ROLES[] = ":roles";
-static const uchar ID_BODY[] = ":do";
+static const uchar ID_DO[] = ":do";
 static const uchar ID_REQ[] = ":req";
 static const uchar ID_RESP[] = ":resp";
+static const uchar ID_BODY[] = ":body";
+
+static const uchar ID_SYSADM[] = "sa";
 
 // forwards
 static state _bh_next(void* v);
@@ -97,7 +98,7 @@ static state _ok_next(void* v) {
 	return OK;
 }
 static state _ok_end(void* v, cdat c, uint l) {
-	return DONE;
+	return END;
 }
 static state _ok_pop(void* v) {
 	return OK;
@@ -117,7 +118,7 @@ static const cle_pipe _ok_node = { _ok_start, _ok_next, _ok_end, _ok_pop,
 
 // copy node begin
 static const cle_pipe _copy_node = { _ok_start, resp_next, _ok_end, resp_pop,
-		resp_push, resp_data, resp_next_ptr };
+		resp_push, resp_data, resp_ptr };
 
 // response node begin
 static state _rn_start(void* v) {
@@ -152,6 +153,16 @@ static state _rn_end(void* v, cdat c, uint l) {
 
 static const cle_pipe _response_node = { _rn_start, _rn_next, _rn_end, _rn_pop,
 		_rn_push, _rn_data, 0 };
+
+// body-handler
+static state _body_start(void* v) {
+	struct handler_node* h = (struct handler_node*) v;
+	state s = resp_ptr(v, h->handler_root);
+	return s == OK ? END : s;
+}
+
+static const cle_pipe _body_node = { _body_start, _ok_next, _ok_end, _ok_pop,
+		_ok_push, _ok_data, _ok_next_ptr };
 
 /****************************************************
  Name scanner
@@ -211,6 +222,7 @@ static struct handler_node* _hnode(struct _scanner_ctx* ctx,
 		const cle_pipe* handler, st_ptr handler_root, enum handler_type type) {
 	struct handler_node* hdl = 0;
 
+	// most specific wins i.e. replace prev record
 	if (type == SYNC_REQUEST_HANDLER) {
 		hdl = ctx->hdltypes[SYNC_REQUEST_HANDLER];
 	}
@@ -236,24 +248,31 @@ static void _ready_node(struct handler_node* n, struct task_common* cmn) {
 	n->cmn = cmn;
 }
 
-static void _reg_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
-	st_ptr tpt = pt;
-	if (st_move(ctx->inst.t, &tpt, ID_BODY, sizeof(ID_BODY)) == 0) {
-		_hnode(ctx, ctx->handler, tpt, SYNC_REQUEST_HANDLER);
-	}
-
-	tpt = pt;
-	if (st_move(ctx->inst.t, &tpt, ID_REQ, sizeof(ID_REQ)) == 0) {
-		_hnode(ctx, ctx->handler, tpt, PIPELINE_REQUEST);
-	}
-
-	tpt = pt;
-	if (st_move(ctx->inst.t, &tpt, ID_RESP, sizeof(ID_RESP)) == 0) {
-		_hnode(ctx, ctx->handler, tpt, PIPELINE_RESPONSE);
+static void _reg_sync_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
+	// :body overrules :do
+	if (st_move(ctx->inst.t, &pt, ID_BODY, sizeof(ID_BODY)) == 0) {
+		_hnode(ctx, &_body_node, pt, SYNC_REQUEST_HANDLER);
+	} else if (st_move(ctx->inst.t, &pt, ID_DO, sizeof(ID_DO)) == 0) {
+		_hnode(ctx, ctx->handler, pt, SYNC_REQUEST_HANDLER);
 	}
 }
 
-static void _reg_syshandlers(struct _scanner_ctx* ctx, st_ptr pt) {
+static void _reg_pipe_handlers(struct _scanner_ctx* ctx, st_ptr pt, cdat tag,
+		uint tag_length, enum handler_type type) {
+	// link pipe-handlers in lex-order
+	if (st_move(ctx->inst.t, &pt, tag, tag_length) == 0) {
+		it_ptr it;
+		it_create(ctx->inst.t, &it, &pt);
+
+		while (it_next(ctx->inst.t, &pt, &it, 0)) {
+			_hnode(ctx, ctx->handler, pt, type);
+		}
+
+		it_dispose(ctx->inst.t, &it);
+	}
+}
+
+static void _reg_sys_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
 	struct _syshandler* syshdl;
 
 	if (pt.pg == 0 || st_move(0, &pt, HEAD_HANDLER, HEAD_SIZE))
@@ -300,15 +319,21 @@ static uint _check_access(task* t, st_ptr allow, st_ptr roles) {
 
 static void _check_boundry(struct _scanner_ctx* ctx) {
 	if (ctx->evt.pg != 0) {
-		_reg_handlers(ctx, ctx->evt);
+		_reg_sync_handlers(ctx, ctx->evt);
+
+		_reg_pipe_handlers(ctx, ctx->evt, ID_REQ, sizeof(ID_REQ),
+				PIPELINE_REQUEST);
+
+		_reg_pipe_handlers(ctx, ctx->evt, ID_RESP, sizeof(ID_RESP),
+				PIPELINE_RESPONSE);
 
 		if (ctx->allowed == 0)
 			ctx->allowed = _check_access(ctx->inst.t, ctx->evt,
 					ctx->user_roles);
 	}
 
-	// sync sys-handler has priority
-	_reg_syshandlers(ctx, ctx->sys);
+	// sync sys-handler has priority - so do it last
+	_reg_sys_handlers(ctx, ctx->sys);
 }
 
 /**
@@ -337,7 +362,7 @@ static int _scanner(void* p, uchar* buffer, uint len) {
 }
 
 static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
-		st_ptr user_roles, st_ptr userid, const cle_pipe *handler) {
+		st_ptr user_roles, const cle_pipe *handler) {
 	ctx->inst.t = tk_clone_task(parent);
 	tk_root_ptr(ctx->inst.t, &ctx->inst.root);
 
@@ -348,8 +373,6 @@ static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
 //		ctx->evt.pg = 0;
 
 	ctx->sys = config;
-
-	ctx->userid = userid;
 	ctx->user_roles = user_roles;
 
 	st_empty(ctx->inst.t, &ctx->event_name);
@@ -357,7 +380,8 @@ static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
 
 	memset(ctx->hdltypes, 0, sizeof(ctx->hdltypes));
 
-	ctx->allowed = st_is_empty(ctx->inst.t, &userid);
+	ctx->allowed = st_exist(ctx->inst.t, &user_roles, ID_SYSADM,
+			sizeof(ID_SYSADM));
 
 	ctx->handler = handler;
 }
@@ -379,10 +403,9 @@ static struct task_common* _create_task_common(struct _scanner_ctx* ctx,
 
 	cmn->handler = ctx->handler;
 
-	cmn->config = config;
-	cmn->event_name = ctx->event_name_base;
-	cmn->user_roles = ctx->user_roles;
-	cmn->userid = ctx->userid;
+	cmn->event_name = st_readonly(&ctx->event_name_base);
+	cmn->user_roles = st_readonly(&ctx->user_roles);
+	cmn->config = st_readonly(&config);
 
 	st_empty(cmn->inst.t, &cmn->top);
 	cmn->free = 0;
@@ -392,6 +415,11 @@ static struct task_common* _create_task_common(struct _scanner_ctx* ctx,
 
 	cmn->parent = 0;
 	cmn->childs = 0;
+
+	_add_child(cmn, 0);
+	_add_child(cmn, 0);
+	_add_child(cmn, 0);
+	_add_child(cmn, 0);
 	return cmn;
 }
 
@@ -436,16 +464,12 @@ static cle_stream* _setup_handlers(struct _scanner_ctx* ctx,
 }
 
 // input interface
-cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr userid,
+cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid,
 		st_ptr user_roles, cle_pipe_inst response, const cle_pipe *handler) {
 	struct _scanner_ctx ctx;
 	cle_stream* ipt = 0;
 
-	st_readonly(&config);
-	st_readonly(&eventid);
-	st_readonly(&user_roles);
-
-	_init_scanner(&ctx, parent, config, user_roles, userid, handler);
+	_init_scanner(&ctx, parent, config, user_roles, handler);
 
 	// before anything push response-node as last response-handler
 	_hnode(&ctx, &_response_node, ctx.evt, PIPELINE_RESPONSE);
@@ -469,7 +493,7 @@ cle_stream* cle_open_child(void* parent, st_ptr eventid, cle_pipe_inst resp) {
 	struct task_common* pcmn = prnt->cmn;
 	struct _child_task* ct;
 	cle_stream* ipt = cle_open(pcmn->inst.t, pcmn->config, eventid,
-			pcmn->userid, pcmn->user_roles, resp, pcmn->handler);
+			pcmn->user_roles, resp, pcmn->handler);
 	if (ipt == 0)
 		return 0;
 
@@ -494,12 +518,9 @@ static state _need_start_call(struct handler_node* h) {
 	if (h->flags & 1)
 		return FAILED;
 
-	if (h->flags == 0) {
-		h->flags |= 2;
+	if ((h->flags & 2) == 0) {
+		h->flags = 2;	// set to a know start-state
 		s = h->handler.pipe->start(h);
-	} else if (h->flags & 4) {
-		h->flags ^= 4;
-		s = h->handler.pipe->next(h);
 	}
 
 	return s;
@@ -511,14 +532,14 @@ static state _check_state(struct handler_node* h, state s, cdat msg,
 	if (s == OK)
 		return OK;
 
-	if (s == DONE) {
+	if (s == END) {
 		do {
 			s = _need_start_call(h);
 
 			// if its a basic handler -> send any last input
 			if (s == OK && h->handler.pipe->next_ptr != 0
 					&& (!st_is_empty(h->cmn->inst.t, &h->cmn->out->pt))) {
-				if (_bh_next(h) > DONE) {
+				if (_bh_next(h) > END) {
 					s = FAILED;
 					break;
 				}
@@ -528,7 +549,7 @@ static state _check_state(struct handler_node* h, state s, cdat msg,
 				s = h->handler.pipe->end(h, 0, 0);
 
 			h->handler.pipe = &_ok_node;
-			if (s > DONE)
+			if (s > END)
 				break;
 			h = h->next;
 		} while (h);
@@ -538,8 +559,8 @@ static state _check_state(struct handler_node* h, state s, cdat msg,
 		h->handler.pipe = &_copy_node;
 	}
 
-	if (s == DONE || s == OK)
-		return DONE;
+	if (s == END || s == OK)
+		return END;
 
 	// Failed
 	h = h->cmn->ipt;
@@ -582,7 +603,7 @@ static state _check_handler(struct handler_node* h, state (*handler)(void*)) {
 }
 
 state cle_close(cle_stream* ipt, cdat msg, uint len) {
-	state s = (len == 0 && (ipt->flags & 1) == 0) ? DONE : FAILED;
+	state s = (len == 0 && (ipt->flags & 1) == 0) ? END : FAILED;
 	s = _check_state(ipt, s, msg, len);
 
 	// detach from parent (if any)
@@ -598,8 +619,8 @@ state cle_close(cle_stream* ipt, cdat msg, uint len) {
 	}
 
 	// commit (trace and stream)
-	if (s == DONE) {
-		s = cmt_commit_task(ipt->cmn->inst.t) == 0 ? DONE : FAILED;
+	if (s == END) {
+		s = cmt_commit_task(ipt->cmn->inst.t) == 0 ? END : FAILED;
 		//s = cle_commit_objects(ipt->cmn->inst, 0, 0) == 0 ? DONE : FAILED;
 	} else {
 		// drop local task
@@ -610,8 +631,7 @@ state cle_close(cle_stream* ipt, cdat msg, uint len) {
 }
 
 state cle_next(cle_stream* ipt) {
-	ipt->flags |= 4;
-	return OK; //_check_handler(ipt, ipt->handler.pipe->next);
+	return _check_handler(ipt, ipt->handler.pipe->next);
 }
 
 state cle_pop(cle_stream* ipt) {
@@ -639,7 +659,6 @@ void cle_handler_get_env(const void* p, struct handler_env* env) {
 	env->event_rest = h->event_rest;
 	env->roles = h->cmn->user_roles;
 	env->data = h->handler.data;
-	env->user = h->cmn->userid;
 	env->inst = h->cmn->inst;
 }
 
@@ -662,9 +681,7 @@ state resp_data(void* p, cdat c, uint l) {
 }
 state resp_next(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
-	h->flags |= 4;
-
-	return OK; //_check_handler(h->next, h->next->handler.pipe->next);
+	return _check_handler(h->next, h->next->handler.pipe->next);
 }
 state resp_push(void* p) {
 	struct handler_node* h = (struct handler_node*) p;
@@ -678,14 +695,14 @@ static state _data_serializer(void* p, cdat c, uint l, uint at) {
 	struct handler_node* h = (struct handler_node*) p;
 	return h->handler.pipe->data(p, c, l);
 }
-state resp_next_ptr(void* v, st_ptr pt) {
+state resp_ptr(void* v, st_ptr pt) {
 	struct handler_node* h = (struct handler_node*) v;
 	state s = _need_start_call(h->next);
 	if (s == OK) {
 		st_readonly(&pt);
 
-		if (h->next->handler.pipe->next_ptr &&
-				st_is_empty(h->cmn->inst.t, &h->cmn->top))
+		if (h->next->handler.pipe->next_ptr
+				&& st_is_empty(h->cmn->inst.t, &h->cmn->top))
 			s = h->next->handler.pipe->next_ptr(h->next, pt);
 		else
 			s = st_map_st(h->cmn->inst.t, &pt, _data_serializer,
@@ -693,7 +710,12 @@ state resp_next_ptr(void* v, st_ptr pt) {
 					h->next);
 	}
 
-	return OK;
+	return _check_state(h->next, s, 0, 0);
+}
+
+state resp_ptr_next(void* v, st_ptr pt) {
+	state s = resp_ptr(v, pt);
+	return s == OK ? resp_next(v) : s;
 }
 
 // add handler to config
@@ -775,13 +797,13 @@ cle_pipe cle_basic_handler(state (*start)(void*),
 }
 
 cle_pipe cle_basic_trigger_start(state (*start)(void* p)) {
-	const cle_pipe p = { start, resp_next, _ok_end, resp_pop, resp_push,
-			resp_data, _ok_next_ptr };
+	cle_pipe p = _copy_node;
+	p.start = start;
 	return p;
 }
 
 cle_pipe cle_basic_trigger_end(state (*end)(void* p, cdat msg, uint len)) {
-	const cle_pipe p = { _ok_start, resp_next, end, resp_pop, resp_push,
-			resp_data, _ok_next_ptr };
+	cle_pipe p = _copy_node;
+	p.end = end;
 	return p;
 }
