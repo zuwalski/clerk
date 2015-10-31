@@ -42,7 +42,8 @@ struct _st_lkup_it_res {
 	uint readonly;
 };
 
-static void _it_lookup(struct _st_lkup_it_res* rt) {
+static void _it_lookup(struct _st_lkup_it_res* rt,
+		const int look_for_extensions) {
 	key* me = rt->sub;
 	cdat ckey = KDATA(me) + (rt->diff >> 3);
 	uchar* atsub = rt->path - (rt->diff >> 3);
@@ -54,6 +55,7 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 	rt->high_diff = rt->low_diff = 0;
 
 	while (1) {
+		// next section: how long do rt-sub and ckey match?
 		uchar* to, *curr = rt->path;
 		uint i, d = 0;
 
@@ -121,8 +123,13 @@ static void _it_lookup(struct _st_lkup_it_res* rt) {
 			}
 		}
 
+		// check for continue on the current sub-branch
 		if (rt->diff != rt->sub->length) {
 			key* k = (me != 0 && me->offset >= offset) ? me : 0;
+
+			// input-key fully exhausted
+			if (!look_for_extensions && rt->length == 0)
+				break;
 
 			if (*rt->path & (0x80 >> (rt->diff & 7))) {
 				rt->low = rt->sub;
@@ -242,6 +249,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt,
 
 		// copy bytes
 		if (length == 0) {
+			// search to 0
 			while (clen-- != 0) {
 				it->kused++;
 				if (it->kused > it->ksize)
@@ -254,6 +262,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt,
 				ckey++;
 			}
 		} else if (length < 0) {
+			// as much as you can
 			it->kused += clen;
 
 			if (it->kused > it->ksize)
@@ -263,6 +272,7 @@ static void _it_next_prev(it_ptr* it, struct _st_lkup_it_res* rt,
 			rt->diff += clen * 8;
 			rt->path += clen;
 		} else {
+			// fixed length
 			if (it->kused + clen > length) {
 				if (it->kused >= length)
 					return;
@@ -308,7 +318,7 @@ uint it_next(task* t, st_ptr* pt, it_ptr* it, const int length) {
 	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
-		_it_lookup(&rt);
+		_it_lookup(&rt, length < 0);
 
 		if (rt.high == 0) {
 			if (rt.length == 0)
@@ -336,7 +346,7 @@ uint it_next_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
 	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
-		_it_lookup(&rt);
+		_it_lookup(&rt, length < 0);
 
 		if (rt.length == 0) {
 			_it_move(&rt, pt);
@@ -364,7 +374,7 @@ uint it_prev(task* t, st_ptr* pt, it_ptr* it, const int length) {
 	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
-		_it_lookup(&rt);
+		_it_lookup(&rt, length < 0);
 
 		if (rt.low == 0) {
 			if (rt.length == 0)
@@ -389,7 +399,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
 	struct _st_lkup_it_res rt = _init_res(t, it);
 
 	if (rt.length > 0) {
-		_it_lookup(&rt);
+		_it_lookup(&rt, length < 0);
 
 		if (rt.length == 0) {
 			_it_move(&rt, pt);
@@ -416,7 +426,7 @@ uint it_prev_eq(task* t, st_ptr* pt, it_ptr* it, const int length) {
 void it_load(task* t, it_ptr* it, cdat path, uint length) {
 	if (it->ksize < length) {
 		it->ksize = length + IT_GROW_SIZE;
-		it->kdata = (uchar*) tk_realloc(t, it->kdata, it->ksize);
+		it->kdata = tk_alloc(t, it->ksize, 0);
 	}
 
 	memcpy(it->kdata, path, length);

@@ -82,7 +82,7 @@ static const uchar ID_ROLES[] = ":roles";
 static const uchar ID_DO[] = ":do";
 static const uchar ID_REQ[] = ":req";
 static const uchar ID_RESP[] = ":resp";
-static const uchar ID_BODY[] = ":body";
+static const uchar ID_DOC[] = ":doc";
 
 static const uchar ID_SYSADM[] = "sa";
 
@@ -250,7 +250,7 @@ static void _ready_node(struct handler_node* n, struct task_common* cmn) {
 
 static void _reg_sync_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
 	// :body overrules :do
-	if (st_move(ctx->inst.t, &pt, ID_BODY, sizeof(ID_BODY)) == 0) {
+	if (st_move(ctx->inst.t, &pt, ID_DOC, sizeof(ID_DOC)) == 0) {
 		_hnode(ctx, &_body_node, pt, SYNC_REQUEST_HANDLER);
 	} else if (st_move(ctx->inst.t, &pt, ID_DO, sizeof(ID_DO)) == 0) {
 		_hnode(ctx, ctx->handler, pt, SYNC_REQUEST_HANDLER);
@@ -532,31 +532,22 @@ static state _check_state(struct handler_node* h, state s, cdat msg,
 	if (s == OK)
 		return OK;
 
+	if (s == LEAVE) {
+		// must have started already
+		s = h->handler.pipe->end(h, 0, 0);
+		h->handler.pipe = &_copy_node;
+	}
+
 	if (s == END) {
 		do {
 			s = _need_start_call(h);
-
-			// if its a basic handler -> send any last input
-			if (s == OK && h->handler.pipe->next_ptr != 0
-					&& (!st_is_empty(h->cmn->inst.t, &h->cmn->out->pt))) {
-				if (_bh_next(h) > END) {
-					s = FAILED;
-					break;
-				}
-			}
 
 			if (s != FAILED)
 				s = h->handler.pipe->end(h, 0, 0);
 
 			h->handler.pipe = &_ok_node;
-			if (s > END)
-				break;
 			h = h->next;
-		} while (h);
-	} else if (s == LEAVE) {
-		// must have started already
-		s = h->handler.pipe->end(h, 0, 0);
-		h->handler.pipe = &_copy_node;
+		} while (h && s <= END);
 	}
 
 	if (s == END || s == OK)
@@ -699,6 +690,18 @@ state resp_ptr(void* v, st_ptr pt) {
 	struct handler_node* h = (struct handler_node*) v;
 	state s = _need_start_call(h->next);
 	if (s == OK) {
+		s = st_map_st(h->cmn->inst.t, &pt, _data_serializer,
+				h->next->handler.pipe->push, h->next->handler.pipe->pop,
+				h->next);
+	}
+
+	return _check_state(h->next, s, 0, 0);
+}
+
+state resp_ptr_next(void* v, st_ptr pt) {
+	struct handler_node* h = (struct handler_node*) v;
+	state s = _need_start_call(h->next);
+	if (s == OK) {
 		st_readonly(&pt);
 
 		if (h->next->handler.pipe->next_ptr
@@ -710,11 +713,8 @@ state resp_ptr(void* v, st_ptr pt) {
 					h->next);
 	}
 
-	return _check_state(h->next, s, 0, 0);
-}
+	s = _check_state(h->next, s, 0, 0);
 
-state resp_ptr_next(void* v, st_ptr pt) {
-	state s = resp_ptr(v, pt);
 	return s == OK ? resp_next(v) : s;
 }
 
@@ -777,15 +777,15 @@ static state _bh_data(void* v, cdat c, uint l) {
 
 static state _bh_next(void* v) {
 	struct handler_node* h = (struct handler_node*) v;
-	state s = OK;
+	st_ptr pt = h->cmn->top;
 
-	if (st_is_empty(h->cmn->inst.t, &h->cmn->top) == 0) {
-		s = h->handler.pipe->next_ptr(v, h->cmn->top);
+	if (st_is_empty(h->cmn->inst.t, &pt))
+		return OK;
 
-		st_empty(h->cmn->inst.t, &h->cmn->top);
-		h->cmn->out->pt = h->cmn->top;
-	}
-	return s;
+	st_empty(h->cmn->inst.t, &h->cmn->top);
+	h->cmn->out->pt = h->cmn->top;
+
+	return h->handler.pipe->next_ptr(v, pt);
 }
 
 cle_pipe cle_basic_handler(state (*start)(void*),

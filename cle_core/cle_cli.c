@@ -134,14 +134,11 @@ state data(void* p, cdat d, uint l) {
 	return OK;
 }
 state end(void* p, cdat d, uint l) {
-	struct output_state* out = (struct output_state*) p;
-
 	if (l > 0) {
 		fprintf(stderr, "ERROR: %.*s\n", l, d);
 		return FAILED;
 	}
 
-	_tracker_reset(p);
 	return END;
 }
 
@@ -251,8 +248,10 @@ static void read_input(FILE* f, cle_stream* strm) {
 			}
 			cle_pop(strm);
 
-			if (--level <= 0)
+			if (--level <= 0) {
+				cle_next(strm);
 				return;
+			}
 			break;
 		case '{':
 			if (ok_is_empty) {
@@ -436,13 +435,17 @@ static cle_pipe read_handler;
 static cle_pipe quit_handler;
 
 static state eval_start(void* p) {
-	struct handler_env env;
-	cle_handler_get_env(p, &env);
-	return resp_ptr_next(p, env.handler_root);
+	return OK;
 }
 
 static state eval_next(void* p, st_ptr pt) {
-	return resp_ptr_next(p, pt);
+	struct handler_env env;
+	cle_handler_get_env(p, &env);
+
+	resp_ptr(p, env.handler_root);
+	resp_data(p, (cdat) ":", 2);
+	resp_ptr(p, pt);
+	return resp_next(p);
 }
 
 static state eval_end(void* p, cdat d, uint l) {
