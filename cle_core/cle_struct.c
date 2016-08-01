@@ -331,7 +331,6 @@ uint st_is_readonly(st_ptr* pt) {
 	return pt->key & 1;
 }
 
-
 uint st_move(task* t, st_ptr* pt, cdat path, uint length) {
 	struct _st_lkup_res rt = _init_res(t, pt, path, length);
 
@@ -1106,6 +1105,15 @@ uint st_destroy_stream(struct st_stream* ctx) {
 	tk_mfree(ctx->t, ctx->top);
 	tk_mfree(ctx->t, ctx);
 	return ret;
+}
+
+uint st_top_stream(struct st_stream* ctx, st_ptr* pt) {
+    if (ctx == 0) {
+        return 1;
+    }
+
+    _pt_move(pt, &ctx->top[ctx->idx]);
+    return 0;
 }
 
 uint st_stream_data(struct st_stream* ctx, cdat dat, uint length, uint at) {

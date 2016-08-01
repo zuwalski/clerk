@@ -37,7 +37,7 @@ struct _child_task {
 struct task_common {
 	struct task_common* parent;
 	struct _child_task* childs;
-	const cle_pipe *handler;
+	cle_pipe_inst handler;
 	cle_pipe_inst response;
 	cle_instance inst;
 	st_ptr event_name;
@@ -67,7 +67,7 @@ struct _syshandler {
 struct _scanner_ctx {
 	cle_instance inst;
 	struct handler_node* hdltypes[PIPELINE_RESPONSE + 1];
-	const cle_pipe *handler;
+	cle_pipe_inst handler;
 	st_ptr event_name_base;
 	st_ptr event_name;
 	st_ptr user_roles;
@@ -82,12 +82,15 @@ static const uchar ID_ROLES[] = ":roles";
 static const uchar ID_DO[] = ":do";
 static const uchar ID_REQ[] = ":req";
 static const uchar ID_RESP[] = ":resp";
-static const uchar ID_DOC[] = ":doc";
+static const uchar ID_BODY[] = ":body";
+static const uchar ID_PROC[] = ":proc";
 
 static const uchar ID_SYSADM[] = "sa";
 
 // forwards
 static state _bh_next(void* v);
+
+static struct handler_node* _proc_open(struct task_common* cmn, st_ptr eventid);
 
 // ok node begin
 
@@ -169,14 +172,14 @@ static const cle_pipe _body_node = { _body_start, _ok_next, _ok_end, _ok_pop,
 
  ****************************************************/
 
-int cle_scan_validate(task* t, st_ptr* from, int (*fun)(void*, uchar*, uint),
+int cle_scan_validate(task* t, st_ptr from, int (*fun)(void*, uchar*, uint),
 		void* ctx) {
 	uchar buffer[100];
 	int state = 2;
 	while (1) {
 		int c, i = 0;
 		do {
-			c = st_scan(t, from);
+			c = st_scan(t, &from);
 			switch (c) {
 			case 0:
 				if (state != 1)
@@ -223,13 +226,14 @@ static struct handler_node* _hnode(struct _scanner_ctx* ctx,
 	struct handler_node* hdl = 0;
 
 	// most specific wins i.e. replace prev record
-	if (type == SYNC_REQUEST_HANDLER) {
+	if (type == SYNC_REQUEST_HANDLER || type == SYNC_PROC) {
 		hdl = ctx->hdltypes[SYNC_REQUEST_HANDLER];
 	}
 
-	if (hdl == 0)
+	if (hdl == 0) {
 		hdl = (struct handler_node*) tk_alloc(ctx->inst.t,
 				sizeof(struct handler_node), 0);
+	}
 
 	hdl->next = ctx->hdltypes[type];
 	ctx->hdltypes[type] = hdl;
@@ -237,23 +241,28 @@ static struct handler_node* _hnode(struct _scanner_ctx* ctx,
 	hdl->handler.pipe = handler;
 	hdl->event_rest = ctx->event_name;
 	hdl->handler_root = handler_root;
+	hdl->flags = (type == SYNC_PROC);
 
-	st_readonly(&hdl->event_rest);
 	return hdl;
 }
 
-static void _ready_node(struct handler_node* n, struct task_common* cmn) {
-	n->handler.data = 0;
-	n->flags = 0;
-	n->cmn = cmn;
+static void _ready_nodes(struct handler_node* n, struct task_common* cmn) {
+	for (cmn->ipt = n; n; n = n->next) {
+		n->handler.data = 0;
+		n->flags = 0;
+		n->cmn = cmn;
+		st_readonly(&n->event_rest);
+	}
 }
 
 static void _reg_sync_handlers(struct _scanner_ctx* ctx, st_ptr pt) {
-	// :body overrules :do
-	if (st_move(ctx->inst.t, &pt, ID_DOC, sizeof(ID_DOC)) == 0) {
+	// :body overrules :do overrules :proc
+	if (st_move(ctx->inst.t, &pt, ID_BODY, sizeof(ID_BODY)) == 0) {
 		_hnode(ctx, &_body_node, pt, SYNC_REQUEST_HANDLER);
 	} else if (st_move(ctx->inst.t, &pt, ID_DO, sizeof(ID_DO)) == 0) {
-		_hnode(ctx, ctx->handler, pt, SYNC_REQUEST_HANDLER);
+		_hnode(ctx, ctx->handler.pipe, pt, SYNC_REQUEST_HANDLER);
+	} else if (st_move(ctx->inst.t, &pt, ID_PROC, sizeof(ID_PROC)) == 0) {
+		_hnode(ctx, ctx->handler.pipe, pt, SYNC_PROC);
 	}
 }
 
@@ -265,7 +274,7 @@ static void _reg_pipe_handlers(struct _scanner_ctx* ctx, st_ptr pt, cdat tag,
 		it_create(ctx->inst.t, &it, &pt);
 
 		while (it_next(ctx->inst.t, &pt, &it, 0)) {
-			_hnode(ctx, ctx->handler, pt, type);
+			_hnode(ctx, ctx->handler.pipe, pt, type);
 		}
 
 		it_dispose(ctx->inst.t, &it);
@@ -327,9 +336,10 @@ static void _check_boundry(struct _scanner_ctx* ctx) {
 		_reg_pipe_handlers(ctx, ctx->evt, ID_RESP, sizeof(ID_RESP),
 				PIPELINE_RESPONSE);
 
-		if (ctx->allowed == 0)
+		if (ctx->allowed == 0) {
 			ctx->allowed = _check_access(ctx->inst.t, ctx->evt,
 					ctx->user_roles);
+		}
 	}
 
 	// sync sys-handler has priority - so do it last
@@ -362,8 +372,8 @@ static int _scanner(void* p, uchar* buffer, uint len) {
 }
 
 static void _init_scanner(struct _scanner_ctx* ctx, task* parent, st_ptr config,
-		st_ptr user_roles, const cle_pipe *handler) {
-	ctx->inst.t = tk_clone_task(parent);
+		st_ptr user_roles, cle_pipe_inst handler) {
+	ctx->inst.t = parent;
 	tk_root_ptr(ctx->inst.t, &ctx->inst.root);
 
 	ctx->evt = ctx->inst.root;
@@ -424,60 +434,85 @@ static struct task_common* _create_task_common(struct _scanner_ctx* ctx,
 }
 
 static cle_stream* _setup_handlers(struct _scanner_ctx* ctx,
-		cle_pipe_inst response, st_ptr config) {
+		struct task_common* cmn) {
 	struct handler_node* hdl;
-	struct task_common* cmn;
 	cle_stream* ipt = ctx->hdltypes[SYNC_REQUEST_HANDLER];
 
 	if (ctx->allowed == 0 || ipt == 0)
 		return 0;
 
-	cmn = _create_task_common(ctx, response, config);
-
-	ipt->next = ctx->hdltypes[PIPELINE_RESPONSE];
-	hdl = ipt;
-
 	// setup response-handler chain
 	// in correct order (most specific handler comes first)
-	do {
-		_ready_node(hdl, cmn);
+	ipt->next = ctx->hdltypes[PIPELINE_RESPONSE];
 
-		hdl = hdl->next;
-	} while (hdl != 0);
+	// is proc?
+	if (ipt->flags) {
+		if ((hdl = _proc_open(cmn, ipt->event_rest)) == 0)
+			return 0;
 
-	hdl = ctx->hdltypes[PIPELINE_REQUEST];
+		ipt = hdl;
+		// go to end of chain
+		while (hdl->next) {
+			hdl = hdl->next;
+		}
+
+		// attach sync+resp-pipe
+		hdl->next = ctx->hdltypes[SYNC_REQUEST_HANDLER];
+	}
+
 	// setup request-handler chain
 	// reverse order (most general handlers comes first)
+	hdl = ctx->hdltypes[PIPELINE_REQUEST];
 	while (hdl != 0) {
 		struct handler_node* tmp;
-
-		_ready_node(hdl, cmn);
-
 		tmp = hdl->next;
 		hdl->next = ipt;
 		ipt = hdl;
 		hdl = tmp;
 	}
 
-	cmn->ipt = ipt;
 	return ipt;
+}
+
+/**
+ * Proc
+ */
+static struct handler_node* _proc_open(struct task_common* cmn, st_ptr eventid) {
+	struct _scanner_ctx ctx;
+	struct handler_node* hdl = 0;
+
+	_init_scanner(&ctx, cmn->inst.t, cmn->config, cmn->user_roles,
+			cmn->handler);
+
+	_check_boundry(&ctx);
+
+	if (cle_scan_validate(cmn->inst.t, eventid, _scanner, &ctx) == 0) {
+		hdl = _setup_handlers(&ctx, cmn);
+	}
+
+	return hdl;
 }
 
 // input interface
 cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid,
-		st_ptr user_roles, cle_pipe_inst response, const cle_pipe *handler) {
+		st_ptr user_roles, cle_pipe_inst response, cle_pipe_inst handler) {
 	struct _scanner_ctx ctx;
 	cle_stream* ipt = 0;
 
-	_init_scanner(&ctx, parent, config, user_roles, handler);
+	_init_scanner(&ctx, tk_clone_task(parent), config, user_roles, handler);
 
 	// before anything push response-node as last response-handler
 	_hnode(&ctx, &_response_node, ctx.evt, PIPELINE_RESPONSE);
 
 	_check_boundry(&ctx);
 
-	if (cle_scan_validate(parent, &eventid, _scanner, &ctx) == 0)
-		ipt = _setup_handlers(&ctx, response, config);
+	if (cle_scan_validate(parent, eventid, _scanner, &ctx) == 0) {
+		struct task_common* cmn = _create_task_common(&ctx, response, config);
+
+		ipt = _setup_handlers(&ctx, cmn);
+
+		_ready_nodes(ipt, cmn);
+	}
 
 	if (ipt == 0)
 		tk_drop_task(ctx.inst.t);

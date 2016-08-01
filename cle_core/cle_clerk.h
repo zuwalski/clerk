@@ -46,6 +46,7 @@ typedef struct it_ptr {
 	ushort offset;
 	ushort ksize;
 	ushort kused;
+	ushort koffset;
 } it_ptr;
 
 typedef struct {
@@ -128,7 +129,7 @@ void it_dispose(task* t, it_ptr* it);
 
 void it_load(task* t, it_ptr* it, cdat path, uint length);
 
-void it_reset(it_ptr* it);
+void it_reset(it_ptr* it, st_ptr* root);
 
 uint it_new(task* t, it_ptr* it, st_ptr* pt);
 
@@ -150,6 +151,8 @@ uint st_destroy_stream(struct st_stream* ctx);
 uint st_stream_data(struct st_stream* ctx, cdat dat, uint length, uint at);
 uint st_stream_push(struct st_stream* ctx);
 uint st_stream_pop(struct st_stream* ctx);
+// get top of stream-stack ptr
+uint st_top_stream(struct st_stream* ctx, st_ptr* pt);
 
 /* Task functions */
 task* tk_create_task(cle_pagesource* ps, cle_psrc_data psrc_data);

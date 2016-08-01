@@ -31,7 +31,7 @@ typedef enum handler_state {
 } state;
 
 typedef enum handler_type {
-	SYNC_REQUEST_HANDLER = 0, PIPELINE_REQUEST, PIPELINE_RESPONSE
+	SYNC_REQUEST_HANDLER = 0, PIPELINE_REQUEST, PIPELINE_RESPONSE, SYNC_PROC
 } handler_type;
 
 typedef struct cle_pipe {
@@ -61,7 +61,7 @@ typedef struct {
 typedef struct handler_node cle_stream;
 typedef void* pcle_stream;
 
-cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr user_roles, cle_pipe_inst response, const cle_pipe *handler);
+cle_stream* cle_open(task* parent, st_ptr config, st_ptr eventid, st_ptr user_roles, cle_pipe_inst response, cle_pipe_inst handler);
 
 state cle_close(cle_stream* ipt, cdat msg, uint len);
 state cle_next(cle_stream* ipt);
@@ -97,5 +97,9 @@ cle_pipe cle_basic_handler(state (*start)(void*), state (*next)(void* p, st_ptr 
 
 cle_pipe cle_basic_trigger_start(state (*start)(void*));
 cle_pipe cle_basic_trigger_end(state (*end)(void* p, cdat msg, uint len));
+
+
+cle_pipe_inst create_eval_handler(task* t);
+uint test_compile(task* t, st_ptr loc);
 
 #endif

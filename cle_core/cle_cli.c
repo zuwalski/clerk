@@ -1,7 +1,7 @@
-#include <cle_backends.h>
-#include <cle_clerk.h>
-#include <cle_source.h>
-#include <cle_stream.h>
+#include "backends/cle_backends.h"
+#include "cle_clerk.h"
+#include "cle_source.h"
+#include "cle_stream.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -81,7 +81,7 @@ static void _tracker_pop(void* p) {
 		if (out->ptip == 0)
 			fprintf(stdout, "{}");
 		else
-			fputc(',', stdout);
+			fputc(';', stdout);
 	}
 
 	out->tipp = out->points[out->ptip] & 0x3FFF;
@@ -216,7 +216,7 @@ static int read_string(FILE* f, cle_stream* strm, char quote) {
 	}
 }
 
-static void read_input(FILE* f, cle_stream* strm) {
+static int read_input(FILE* f, cle_stream* strm) {
 	int ok_is_empty = 0;
 	int level = 0;
 
@@ -227,12 +227,7 @@ static void read_input(FILE* f, cle_stream* strm) {
 		switch (c) {
 		case 0:
 		case EOF:
-			return;
-		case '\n':	// white-space
-		case '\r':
-		case '\t':
-		case ' ':
-			break;
+			return level >= 0;
 		case '#':	// comment-line
 			flush_line(f);
 			break;
@@ -240,19 +235,6 @@ static void read_input(FILE* f, cle_stream* strm) {
 		case '\'':
 			c = read_string(f, strm, c);
 			continue;
-		case '}':
-			if (ok_is_empty) {
-				c = 0;
-				cle_data(strm, (cdat) &c, 1);
-				ok_is_empty = 0;
-			}
-			cle_pop(strm);
-
-			if (--level <= 0) {
-				cle_next(strm);
-				return;
-			}
-			break;
 		case '{':
 			if (ok_is_empty) {
 				c = 0;
@@ -260,22 +242,42 @@ static void read_input(FILE* f, cle_stream* strm) {
 			}
 			ok_is_empty = 0;
 			cle_push(strm);
-
 			level++;
 			break;
-		case ',':
 		case ';':
+		case '}':
 			if (ok_is_empty) {
-				c = 0;
-				cle_data(strm, (cdat) &c, 1);
-
-				cle_pop(strm);
-				cle_push(strm);
-				ok_is_empty = 0;
+				int i = 0;
+				cle_data(strm, (cdat) &i, 1);
 			}
+			cle_pop(strm);
+			ok_is_empty = 0;
+			if (c == '}' && --level <= 0) {
+				if(cle_next(strm) == FAILED)
+					return -1;
+				else
+					break;
+			}
+			cle_push(strm);
 			break;
+		case '/':	// slash-dot
 		case '.':
-		case '/':
+			if(!ok_is_empty) {
+				// signal input-error
+				return -1;
+			}
+			/* no break */
+		case '\n':	// white-space
+		case '\r':
+			if(level <= 0) {
+				return 0;
+			}
+			/* no break */
+		case '\t':
+		case ' ':
+			if(!ok_is_empty) { // don't repeat
+				break;
+			}
 			c = 0;
 			/* no break */
 		default:
@@ -287,7 +289,7 @@ static void read_input(FILE* f, cle_stream* strm) {
 	}
 }
 
-static cle_pipe eval_handler;
+static cle_pipe_inst eval_handler;
 
 static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr user_roles) {
 	while (1) {
@@ -306,9 +308,9 @@ static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr user_roles) {
 			cle_pipe_inst out = { &pout, &out_state };
 
 			cle_stream* strm = cle_open(t, config, event, user_roles, out,
-					&eval_handler);
+					eval_handler);
 			if (strm) {
-				if (reader_state == 2)
+				if(reader_state == 2)
 					read_input(f, strm);
 
 				cle_close(strm, 0, 0);
@@ -326,6 +328,25 @@ static void read_cmds(task* parent, FILE* f, st_ptr config, st_ptr user_roles) {
 
 		tk_drop_task(t);
 	}
+}
+
+static state echo_stream_start(void* p) {
+	struct handler_env env;
+	cle_handler_get_env(p, &env);
+	st_ptr pt;
+	st_empty(env.inst.t, &pt);
+	cle_handler_set_data(p, st_merge_stream(env.inst.t, &pt));
+	return OK;
+}
+
+static state echo_stream_end(void* p, cdat d, uint l) {
+	struct st_stream* strm = (struct st_stream*) cle_handler_get_data(p);
+	st_ptr pt;
+	if(st_top_stream(strm, &pt) == 0) {
+		resp_ptr_next(p, pt);
+	}
+	st_destroy_stream(strm);
+	return l == 0 ? END : FAILED;
 }
 
 static state merge_stream_start(void* p) {
@@ -422,6 +443,8 @@ static state stream_data(void* p, cdat c, uint l) {
 	return st_stream_data(strm, c, l, 0) ? FAILED : OK;
 }
 
+static const cle_pipe echo_handler = { echo_stream_start, stream_next,
+		echo_stream_end, stream_pop, stream_push, stream_data, 0 };
 static const cle_pipe merge_handler = { merge_stream_start, stream_next,
 		stream_end, stream_pop, stream_push, stream_data, 0 };
 static const cle_pipe delete_handler = { delete_stream_start, stream_next,
@@ -430,9 +453,6 @@ static const cle_pipe replace_handler = { replace_stream_start, stream_next,
 		stream_end, stream_pop, stream_push, stream_data, 0 };
 static const cle_pipe check_handler = { exist_stream_start, stream_next,
 		stream_end, stream_pop, stream_push, stream_data, 0 };
-
-static cle_pipe read_handler;
-static cle_pipe quit_handler;
 
 static state eval_start(void* p) {
 	return OK;
@@ -450,6 +470,15 @@ static state eval_next(void* p, st_ptr pt) {
 
 static state eval_end(void* p, cdat d, uint l) {
 	return l == 0 ? END : FAILED;
+}
+
+static state comp_next(void* p, st_ptr pt) {
+	struct handler_env env;
+	cle_handler_get_env(p, &env);
+
+	test_compile(env.inst.t, pt);
+
+	return OK;
 }
 
 int main(int argc, char* argv[]) {
@@ -481,20 +510,30 @@ int main(int argc, char* argv[]) {
 	st_insert(parent, &pt, (cdat) "sys\0check", 10);
 	cle_config_handler(parent, pt, &check_handler, SYNC_REQUEST_HANDLER);
 
-	read_handler = cle_basic_trigger_start(read_stream_start);
+	pt = config;
+	st_insert(parent, &pt, (cdat) "echo", 5);
+	cle_config_handler(parent, pt, &echo_handler, SYNC_REQUEST_HANDLER);
+
+	cle_pipe read_handler = cle_basic_trigger_start(read_stream_start);
 	pt = config;
 	st_insert(parent, &pt, (cdat) "sys\0read", 9);
 	cle_config_handler(parent, pt, &read_handler, SYNC_REQUEST_HANDLER);
 
-	quit_handler = cle_basic_trigger_start(quit_stream_start);
+	cle_pipe quit_handler = cle_basic_trigger_start(quit_stream_start);
 	pt = config;
 	st_insert(parent, &pt, (cdat) "quit", 5);
 	cle_config_handler(parent, pt, &quit_handler, SYNC_REQUEST_HANDLER);
 	// sys.dump{file=name}
 	// sys.read
 	// sys.source
+	cle_pipe comp_handler = cle_basic_handler(eval_start, comp_next, eval_end);
+	pt = config;
+	st_insert(parent, &pt, (cdat) "comp", 5);
+	cle_config_handler(parent, pt, &comp_handler, SYNC_REQUEST_HANDLER);
 
-	eval_handler = cle_basic_handler(eval_start, eval_next, eval_end);
+	cle_pipe _eval = cle_basic_handler(eval_start, eval_next, eval_end);
+	eval_handler.pipe = &_eval;
+	eval_handler.data = 0;
 
 	read_cmds(parent, input, config, str(parent, "sa"));
 

@@ -440,18 +440,23 @@ void it_create(task* t, it_ptr* it, st_ptr* pt) {
 	it->offset = pt->offset;
 
 	it->kdata = 0;
-	it->ksize = it->kused = 0;
+	it->ksize = it->kused = it->koffset = 0;
 }
 
 void it_dispose(task* t, it_ptr* it) {
 }
 
-void it_reset(it_ptr* it) {
-	it->kused = 0;
+void it_reset(it_ptr* it, st_ptr* root) {
+	if (root) {
+		it->pg = root->pg;
+		it->key = root->key;
+		it->offset = root->offset;
+	}
+	it->kused = it->koffset;
 }
 
 uint it_current(task* t, it_ptr* it, st_ptr* pt) {
-	if (it->kused == 0)
+	if (it->kused == it->koffset)
 		return 1;
 	pt->pg = it->pg;
 	pt->key = it->key;
