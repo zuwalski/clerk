@@ -24,7 +24,7 @@
 #define MEM_PAGE_SIZE (1024*4)
 #define PAGER_MAGIC 0x240673
 
-cle_pagesource util_memory_pager;
+extern cle_pagesource util_memory_pager;
 
 cle_psrc_data util_create_mempager();
 
@@ -33,7 +33,7 @@ int mempager_get_pagecount(cle_psrc_data);
 void mempager_destroy(cle_psrc_data);
 
 // log-pager
-cle_pagesource util_memory_log;
+extern cle_pagesource util_memory_log;
 
 cle_psrc_data util_create_memlog();
 

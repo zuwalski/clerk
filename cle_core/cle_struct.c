@@ -448,6 +448,7 @@ static uint _st_do_delete(struct _st_lkup_res* rt) {
 
 		rt->sub->length = rt->prev->offset;
 		rt->prev->next = 0;
+        return 0;
 	} else if (rt->d_sub) {
 		page* orig = rt->d_pg;
 		rt->d_pg = _tk_write_copy(rt->t, rt->d_pg);
@@ -473,10 +474,10 @@ static uint _st_do_delete(struct _st_lkup_res* rt) {
 			if (k->offset == rt->d_sub->length)
 				rt->d_sub->length = 0;
 		}
-	} else
-		return 1;
-
-	return 0;
+        return 0;
+	}
+    
+    return 1;
 }
 
 uint st_delete(task* t, st_ptr* pt, cdat path, uint length) {

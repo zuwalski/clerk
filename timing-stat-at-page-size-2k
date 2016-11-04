@@ -1,0 +1,199 @@
+insert 1000000 items. Time 456131
+exsist 1000000 items. Time 440599
+delete 1000000 items. Time 59803
+exsist (empty) 1000000 items. Time 33124
+it_new 1000000 items. Time 652728
+it_next 1000000 items. Time 555246
+it_prev 1000000 items. Time 562347
+insert 1000000 items. Time 425272
+it_next[FIXED] 1000000 items. Time 537777
+it_prev[FIXED] 1000000 items. Time 541113
+0x0(72/0)
+(-0/64)  (32 - s:48 n:0) [ 31 32 33 34...] ->
+..(+36/64)  (48 - s:0 n:0) [ 39 30 31 32...]
+
+Running mempager
+
+(pre-commit)it_new. Time 778833
+(pre-commit)it_next. Time 630661
+mempager: cmt_commit_task. Time 42792 - pages 7969
+L:1 -> 12
+L:2 -> 626
+L:3 -> 7330
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 1
+fill 62% => 7967
+fill 75% => 0
+fill 87% => 0
+empty keys: 0
+zero offset: 7969
+key count: 1003985
+ptr count: 7968
+pages_written: 0
+stack_pages: 1
+ovf_pages: 0
+ovf_used: 0
+ovf_free: 0
+mem used: 10778664
+mem idle: 5539800
+(commit)st_exsist. Time 1067853
+(commit)it_next. Time 1221701
+16 (o: 0, l: 0) (s: 0, n: 0)
+0x0(189/0)
+(-0/0)  (48 - s:64 n:0) [] ->
+..(-0/40)  (64 - s:108 n:0) [ 31 32 33 34...] ->
+....(+21/24)  (108 - s:120 n:88) [ 36 36 36] ->
+......(+23/24)  (120 - s:162 n:0) [ 37 36 37] ->
+........(-24)(INT) page:0x102803e10 + 56 (162 - n:0) >>
+............(-0/0)  (56 - s:178 n:0) [] ->
+..............(-0/24)  (178 - s:0 n:0) [ 31 32 33]
+....(-30/16)  (88 - s:98 n:78) [ 36 36] ->
+......(-14/8)  (98 - s:132 n:0) [ 34] ->
+........(-8/16)  (132 - s:142 n:0) [ 33 33] ->
+..........(-15/8)  (142 - s:0 n:152) [ 32]
+..........(-16/8)  (152 - s:0 n:0) [ 31]
+....(-38/8)  (78 - s:0 n:0) [ 36]
+12345
+12346
+1236432x
+12364331x
+12366331x
+12666331x
+1266767123
+---
+16 (o: 0, l: 40) (s: 72, n: 0)
+30 (o: 38, l: 8) (s: 0, n: 0)
+40 (o: 30, l: 16) (s: 50, n: 30)
+50 (o: 14, l: 32) (s: 62, n: 0)
+62 (o: 23, l: 8) (s: 0, n: 0)
+72 (o: 21, l: 24) (s: 84, n: 40)
+84 (o: 23, l: 48) (s: 0, n: 0)
+0x0(98/0)
+(-0/40)  (16 - s:72 n:0) [ 31 32 33 34...] ->
+..(+21/24)  (72 - s:84 n:40) [ 36 36 36] ->
+....(+23/48)  (84 - s:0 n:0) [ 37 36 37 31...]
+..(-30/16)  (40 - s:50 n:30) [ 36 36] ->
+....(-14/32)  (50 - s:62 n:0) [ 34 33 33 31] ->
+......(-23/8)  (62 - s:0 n:0) [ 32]
+..(-38/8)  (30 - s:0 n:0) [ 36]
+12345
+12346
+1236432x
+12364331x
+12366331x
+12666331x
+1266767123
+0x107000e00(96/0)
+(-0/40)  (16 - s:72 n:0) [ 31 32 33 34...] ->
+..(+21/24)  (72 - s:84 n:40) [ 36 36 36] ->
+....(+23/24)  (84 - s:0 n:0) [ 37 36 37]
+..(-30/16)  (40 - s:50 n:30) [ 36 36] ->
+....(-14/32)  (50 - s:62 n:0) [ 34 33 33 31] ->
+......(-23/8)  (62 - s:0 n:0) [ 32]
+..(-38/8)  (30 - s:0 n:0) [ 36]
+12345
+12346
+12366
+12364
+12666
+1266767
+1236433
+1236432
+12364331
+1 Time validate 182711
+----
+L:1 -> 1864
+L:2 -> 10188
+L:3 -> 32406
+L:4 -> 69465
+L:5 -> 105629
+L:6 -> 115572
+L:7 -> 90842
+L:8 -> 50226
+L:9 -> 18680
+L:10 -> 4321
+L:11 -> 534
+L:12 -> 24
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 0
+fill 62% => 0
+fill 75% => 85
+fill 87% => 499666
+empty keys: 0
+zero offset: 2
+key count: 500000
+ptr count: 499751
+pages_written: 1
+stack_pages: 5123
+ovf_pages: 2504
+ovf_used: 8006256
+ovf_free: 177424
+mem used: 511480692
+mem idle: 2173068
+----
+Commit 58042
+L:1 -> 64
+L:2 -> 4096
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 1536
+fill 62% => 2624
+fill 75% => 0
+fill 87% => 0
+empty keys: 0
+zero offset: 4162
+key count: 502080
+ptr count: 4160
+pages_written: 0
+stack_pages: 1
+ovf_pages: 0
+ovf_used: 0
+ovf_free: 0
+mem used: 5657600
+mem idle: 2862080
+2 Time validate 504777
+
+Running mempager: 1-commit-test
+
+1-commit insert-time 722648
+PRE 1-commit Validate time 507238
+1-commit commit-time 281830
+pages 66577
+L:1 -> 16
+L:2 -> 1024
+L:3 -> 65536
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 0
+fill 62% => 1040
+fill 75% => 65536
+fill 87% => 0
+empty keys: 0
+zero offset: 66578
+key count: 1033288
+ptr count: 66576
+pages_written: 0
+stack_pages: 1
+ovf_pages: 0
+ovf_used: 0
+ovf_free: 0
+mem used: 90527232
+mem idle: 45820416
+1-commit Validate time (1 readonly) 666369
+1-commit Validate time (2) 1842183
+1-commit Time validate (iterate) 1525837
+
+Running mempager: Multi-commit-test
+
+Assertion failed: (setup->dest->used <= setup->dest->size), function _tk_cut_key2, file /Users/lars/git/clerk/cle_core/cle_commit.c, line 222.
+Program ended with exit code: 9

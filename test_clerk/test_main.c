@@ -389,7 +389,7 @@ void test_iterate_c() {
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
 	// run up and down
-	it_reset(&it);
+	it_reset(&it, 0);
 	i = 0;
 
 	start = clock();
@@ -402,7 +402,7 @@ void test_iterate_c() {
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	it_reset(&it);
+	it_reset(&it, 0);
 	i = 0;
 
 	start = clock();
@@ -463,7 +463,7 @@ void test_iterate_fixedlength() {
 
 	ASSERT(i == HIGH_ITERATION_COUNT);
 
-	it_reset(&it);
+	it_reset(&it, 0);
 	i = 0;
 
 	start = clock();
@@ -594,7 +594,7 @@ void test_task_c() {
 
 	printf("(pre-commit)it_new. Time %lu\n", stop - start);
 
-	it_reset(&it);
+	it_reset(&it, 0);
 
 	i = 0;
 	keystore[0] = 0;
@@ -1205,52 +1205,11 @@ void test_commit() {
     tk_drop_task(t);
 }
 
-/////////// basenames ////////////
-
-static st_ptr basenames;
-
-static const uchar _init[] = "init";
-static const uchar _tostring[] = "tostring";
-static const uchar _msghandler[] = "message";
-
-static int _setup_base() {
-	cle_typed_identity _id;
-	st_ptr pt;
-	task* t = tk_create_task(0, 0);
-
-	st_empty(t, &basenames);
-
-	_id.type = TYPE_METHOD;
-	_id.id = F_INIT;
-
-	pt = basenames;
-	st_insert(t, &pt, _init, sizeof(_init));
-	st_append(t, &pt, (cdat) &_id, sizeof(_id));
-
-	_id.type = TYPE_EXPR;
-	_id.id = F_TOSTRING;
-
-	pt = basenames;
-	st_insert(t, &pt, _tostring, sizeof(_tostring));
-	st_append(t, &pt, (cdat) &_id, sizeof(_id));
-
-	_id.type = TYPE_METHOD;
-	_id.id = F_MSG_HANDLER;
-
-	pt = basenames;
-	st_insert(t, &pt, _msghandler, sizeof(_msghandler));
-	st_append(t, &pt, (cdat) &_id, sizeof(_id));
-
-	return 0;
-}
 
 int main(int argc, char* argv[]) {
-    test_commit();
-
-	test_task_c_2a();
+    test_task_c_2a();
     
-	test_task_c_2b();
-    
+     exit(0);
     //
 
 	test_struct_c();
@@ -1262,22 +1221,24 @@ int main(int argc, char* argv[]) {
     test_iterate_fixedlength();
 
 	test_struct_st();
-
-
-
-
-	test_task_c_3();
-
-	test_tk_delta();
-
     
-	test_task_c();
-
-
-	exit(0);
-
-
-	//	_setup_base();
+    test_task_c_3();
+    
+    //test_tk_delta();
+    
+    
+    test_task_c();
+    
+    test_commit();
+    
+    test_task_c_2a();
+    
+    test_task_c_2b();
+    
+    exit(0);
+    
+    
+    //	_setup_base();
 
 //	st_prt_page(&basenames);
 //	map_static_page(basenames.pg);

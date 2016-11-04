@@ -1,0 +1,221 @@
+insert 1000000 items. Time 453629
+exsist 1000000 items. Time 394107
+delete 1000000 items. Time 58381
+exsist (empty) 1000000 items. Time 32999
+it_new 1000000 items. Time 650752
+it_next 1000000 items. Time 589061
+it_prev 1000000 items. Time 561764
+insert 1000000 items. Time 424672
+it_next[FIXED] 1000000 items. Time 505535
+it_prev[FIXED] 1000000 items. Time 537666
+0x0(72/0)
+(-0/64)  (32 - s:48 n:0) [ 31 32 33 34...] ->
+..(+36/64)  (48 - s:0 n:0) [ 39 30 31 32...]
+
+Running mempager
+
+(pre-commit)it_new. Time 762446
+(pre-commit)it_next. Time 626972
+mempager: cmt_commit_task. Time 42417 - pages 3953
+L:1 -> 95
+L:2 -> 3857
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 1
+fill 62% => 3951
+fill 75% => 0
+fill 87% => 0
+empty keys: 0
+zero offset: 5905
+key count: 1001984
+ptr count: 3952
+pages_written: 0
+stack_pages: 1
+ovf_pages: 0
+ovf_used: 0
+ovf_free: 0
+mem used: 10572510
+mem idle: 5614882
+(commit)st_exsist. Time 827675
+(commit)it_next. Time 973366
+16 (o: 0, l: 0) (s: 0, n: 0)
+0x0(189/0)
+(-0/0)  (48 - s:64 n:0) [] ->
+..(-0/40)  (64 - s:108 n:0) [ 31 32 33 34...] ->
+....(+21/24)  (108 - s:120 n:88) [ 36 36 36] ->
+......(+23/24)  (120 - s:162 n:0) [ 37 36 37] ->
+........(-24)(INT) page:0x105000010 + 56 (162 - n:0) >>
+............(-0/0)  (56 - s:178 n:0) [] ->
+..............(-0/24)  (178 - s:0 n:0) [ 31 32 33]
+....(-30/16)  (88 - s:98 n:78) [ 36 36] ->
+......(-14/8)  (98 - s:132 n:0) [ 34] ->
+........(-8/16)  (132 - s:142 n:0) [ 33 33] ->
+..........(-15/8)  (142 - s:0 n:152) [ 32]
+..........(-16/8)  (152 - s:0 n:0) [ 31]
+....(-38/8)  (78 - s:0 n:0) [ 36]
+12345
+12346
+1236432
+12364331
+12366331
+12666331
+1266767123
+---
+16 (o: 0, l: 40) (s: 72, n: 0)
+30 (o: 38, l: 8) (s: 0, n: 0)
+40 (o: 30, l: 16) (s: 50, n: 30)
+50 (o: 14, l: 32) (s: 62, n: 0)
+62 (o: 23, l: 8) (s: 0, n: 0)
+72 (o: 21, l: 24) (s: 84, n: 40)
+84 (o: 23, l: 48) (s: 0, n: 0)
+0x0(98/0)
+(-0/40)  (16 - s:72 n:0) [ 31 32 33 34...] ->
+..(+21/24)  (72 - s:84 n:40) [ 36 36 36] ->
+....(+23/48)  (84 - s:0 n:0) [ 37 36 37 31...]
+..(-30/16)  (40 - s:50 n:30) [ 36 36] ->
+....(-14/32)  (50 - s:62 n:0) [ 34 33 33 31] ->
+......(-23/8)  (62 - s:0 n:0) [ 32]
+..(-38/8)  (30 - s:0 n:0) [ 36]
+12345
+12346
+1236432
+12364331
+12366331
+12666331
+1266767123
+0x105003200(96/0)
+(-0/40)  (16 - s:72 n:0) [ 31 32 33 34...] ->
+..(+21/24)  (72 - s:84 n:40) [ 36 36 36] ->
+....(+23/24)  (84 - s:0 n:0) [ 37 36 37]
+..(-30/16)  (40 - s:50 n:30) [ 36 36] ->
+....(-14/32)  (50 - s:62 n:0) [ 34 33 33 31] ->
+......(-23/8)  (62 - s:0 n:0) [ 32]
+..(-38/8)  (30 - s:0 n:0) [ 36]
+12345
+12346
+12366
+12364
+12666
+1266767
+1236433
+1236432
+12364331
+1 Time validate 175049
+----
+L:1 -> 2984
+L:2 -> 14080
+L:3 -> 42072
+L:4 -> 84396
+L:5 -> 118016
+L:6 -> 115488
+L:7 -> 78080
+L:8 -> 34560
+L:9 -> 8960
+L:10 -> 1024
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 0
+fill 62% => 0
+fill 75% => 82
+fill 87% => 499578
+empty keys: 0
+zero offset: 2
+key count: 500000
+ptr count: 499660
+pages_written: 1
+stack_pages: 5121
+ovf_pages: 2503
+ovf_used: 7986864
+ovf_free: 173904
+mem used: 518652749
+mem idle: 2165939
+----
+Commit 51870
+L:1 -> 16
+L:2 -> 2048
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 768
+fill 62% => 1296
+fill 75% => 0
+fill 87% => 0
+empty keys: 0
+zero offset: 2066
+key count: 501032
+ptr count: 2064
+pages_written: 0
+stack_pages: 1
+ovf_pages: 0
+ovf_used: 0
+ovf_free: 0
+mem used: 5543424
+mem idle: 2910720
+2 Time validate 455914
+
+Running mempager: 1-commit-test
+
+1-commit insert-time 685412
+PRE 1-commit Validate time 455595
+1-commit commit-time 270467
+pages 33027
+L:1 -> 2
+L:2 -> 256
+L:3 -> 32768
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 0
+fill 62% => 258
+fill 75% => 32768
+fill 87% => 0
+empty keys: 0
+zero offset: 33156
+key count: 1016513
+ptr count: 33026
+pages_written: 0
+stack_pages: 1
+ovf_pages: 0
+ovf_used: 0
+ovf_free: 0
+mem used: 89297012
+mem idle: 45977484
+1-commit Validate time (1 readonly) 692471
+1-commit Validate time (2) 1503399
+1-commit Time validate (iterate) 1315903
+
+Running mempager: Multi-commit-test
+
+Multi-commit Time 15130688
+pages 33027
+Multi-commit Time validate 1542040
+Multi-commit Time validate (iterate) 1352786
+L:1 -> 2
+L:2 -> 256
+L:3 -> 32768
+fill 0% => 0
+fill 12% => 0
+fill 25% => 0
+fill 37% => 0
+fill 50% => 0
+fill 62% => 258
+fill 75% => 32768
+fill 87% => 0
+empty keys: 0
+zero offset: 33156
+key count: 1016513
+ptr count: 33026
+pages_written: 0
+stack_pages: 992
+ovf_pages: 962
+ovf_used: 515088
+ovf_free: 57200
+mem used: 89297012
+mem idle: 45977484
+Program ended with exit code: 0

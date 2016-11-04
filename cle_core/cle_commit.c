@@ -32,71 +32,82 @@ struct _tk_setup {
 	ushort o_pt;
 };
 
-static void _tk_compact_copy2(page* dest, page* pg, key* parent, ushort next, int adjoffset) {
-	while (next) {
-		key* k = GOOFF(pg, next);
-		// trace to end-of-next's
-        _tk_compact_copy2(dest, pg, parent, k->next, adjoffset);
+static void _tk_compact_copy2(struct _tk_setup* setup, page* pg, key* parent, ushort next, int adjoffset) {
+    while (next) {
+        page* dest = setup->dest;
+        key* k = GOOFF(pg, next);
+        // trace to end-of-next's
+        _tk_compact_copy2(setup, pg, parent, k->next, adjoffset);
         
-		if (ISPTR(k)) // pointer
-		{
-			ptr* pt = (ptr*) k;
-			if (pt->koffset) {
-				pg = (page*) pt->pg;
-				k = GOKEY(pg,pt->koffset);
+        if (ISPTR(k)) // pointer
+        {
+            ptr* pt = (ptr*) k;
+            if(setup->o_pt == 0) {
+                setup->o_pt = next;
+            }
+            if (pt->koffset) {
+                pg = (page*) pt->pg;
+                k = GOKEY(pg,pt->koffset);
                 k->offset = pt->offset;
                 // continue processing target
-			} else {
-				ptr* newptr = (ptr*) GOKEY(dest, dest->used);
-				newptr->pg = pt->pg;
-				newptr->koffset = 0;
-				newptr->ptr_id = PTR_ID;
-				newptr->offset = pt->offset + adjoffset;
-				newptr->next = parent->sub;
-				parent->sub = dest->used;
-				dest->used += sizeof(ptr);
-				return;
-			}
-		}
-        
-		if (k->length == 0) // empty key? (skip)
-        {
-			adjoffset += k->offset;
+            } else {
+                ptr* newptr = (ptr*) GOKEY(dest, dest->used);
+                newptr->pg = pt->pg;
+                newptr->koffset = 0;
+                newptr->ptr_id = PTR_ID;
+                newptr->offset = pt->offset + adjoffset;
+                newptr->next = parent->sub;
+                parent->sub = dest->used;
+                dest->used += sizeof(ptr);
+                return;
+            }
         }
-		else if (k->offset + adjoffset == parent->length) // append to parent key?
-        {
-			memcpy(KDATA(parent) + (parent->length >> 3), KDATA(k), CEILBYTE(k->length));
-            
-			adjoffset = parent->length & 0xFFF8; // 'my' subs are offset by floor(parent-length)
-            
-			parent->length = k->length + adjoffset;
-            
-			dest->used = ((char*)parent - (char*)dest) + sizeof(key) + CEILBYTE(parent->length);
-			dest->used += dest->used & 1;
-        }
-        else // key w/data
-		{
-			key* np = GOKEY(dest, dest->used);
-			np->offset = k->offset + adjoffset;
-			np->length = k->length;
-			np->sub = 0;
-			np->next = parent->sub;
-            parent->sub = dest->used;
-            
-			memcpy(KDATA(np), KDATA(k), CEILBYTE(k->length));
-			dest->used += sizeof(key) + CEILBYTE(k->length);
-			dest->used += dest->used & 1;
-            adjoffset = 0;
-            parent = np;
-		}
         
-		next = k->sub;
-	}
+        if (k->length == 0) {// empty key? (skip)
+            adjoffset += k->offset;
+        } else {
+            if (setup->o_pt == 0 && (CEILBYTE(k->length) + sizeof(key) >= sizeof(ptr))) {
+                setup->o_pt = next;
+            }
+            
+            if (k->offset + adjoffset == parent->length) // append to parent key?
+            {
+                memcpy(KDATA(parent) + (parent->length >> 3), KDATA(k), CEILBYTE(k->length));
+                
+                adjoffset = parent->length & 0xFFF8; // 'my' subs are offset by floor(parent-length)
+                
+                parent->length = k->length + adjoffset;
+                
+                dest->used = ((char*)parent - (char*)dest) + sizeof(key) + CEILBYTE(parent->length);
+                dest->used += dest->used & 1;
+            }
+            else // key w/data
+            {
+                key* np = GOKEY(dest, dest->used);
+                np->offset = k->offset + adjoffset;
+                np->length = k->length;
+                np->sub = 0;
+                np->next = parent->sub;
+                parent->sub = dest->used;
+                
+                memcpy(KDATA(np), KDATA(k), CEILBYTE(k->length));
+                dest->used += sizeof(key) + CEILBYTE(k->length);
+                dest->used += dest->used & 1;
+                adjoffset = 0;
+                parent = np;
+            }
+        }
+        
+        next = k->sub;
+    }
 }
 
-static void _tk_root_copy(page* dest, page* pw, key* copy, ushort next, int cut_adj) {
+static void _tk_root_copy(struct _tk_setup* setup, page* pw, key* copy, ushort next, int cut_adj) {
+    page* dest = setup->dest;
 	key* root = GOKEY(dest, sizeof(page));
-    
+
+    assert(!ISPTR(copy));
+
 	root->offset = root->next = root->sub = 0;
 	root->length = copy->length - (cut_adj & 0xFFF8);
     
@@ -105,12 +116,15 @@ static void _tk_root_copy(page* dest, page* pw, key* copy, ushort next, int cut_
     dest->used = sizeof(page) + sizeof(key) + CEILBYTE(root->length);
     dest->used += dest->used & 1;
     
-    _tk_compact_copy2(dest, pw, root, next, -(cut_adj & 0xFFF8));
+    _tk_compact_copy2(setup, pw, root, next, -(cut_adj & 0xFFF8));
+    
+    assert(dest->used <= dest->size);
 }
 
 // -----------
 
 void test_copy(task* t, page* dst, st_ptr src) {
+    /*
     key* copy = GOOFF(src.pg, src.key);
     
     _tk_root_copy(dst, src.pg, copy, copy->sub, src.offset);
@@ -128,6 +142,7 @@ void test_copy(task* t, page* dst, st_ptr src) {
         
         i += i & 1;
     }
+     */
 }
 
 void test_measure(task* t, st_ptr src) {
@@ -136,144 +151,65 @@ void test_measure(task* t, st_ptr src) {
 // --------
 
 static ushort _tk_link_and_create_page(struct _tk_setup* setup, page* pw, int ptr_offset) {
-	ptr* pt;
+    ptr* pt;
+    
+    assert(setup->o_pt);
     
 	// no large enough existing key?
 	if (setup->o_pt == 0) {
-		setup->o_pt = _tk_alloc_ptr(setup->t, TO_TASK_PAGE(pw) ); // might change ptr-address!
+		//setup->o_pt = _tk_alloc_ptr(setup->t, TO_TASK_PAGE(pw) ); // might change ptr-address!
 	}
     
 	// create a link to new page
     pt = (ptr*) GOOFF(pw,setup->o_pt);
-	pt->offset = ptr_offset;
+    pt->offset = ptr_offset;
+    pt->next = 0;
 	pt->ptr_id = PTR_ID;
 	pt->koffset = 0;
-    pt->next = 0;
     pt->pg = setup->dest->id;
     
 	return setup->o_pt;
 }
 
-static uint _tk_sizeof(page* pw, ushort kptr) {
-    uint size = 0;
-    
-    while (kptr) {
-        key* k = GOOFF(pw,kptr);
-        size += _tk_sizeof(pw, k->next);
-        
-        if (ISPTR(k)) {
-            ptr* pt = (ptr*) k;
-            if (pt->koffset > 1) {
-                pw = pt->pg;
-            } else {
-                return size + sizeof(ptr);
-            }
-        } else if (k->length) {
-            size += 1 + sizeof(key) + CEILBYTE(k->length);
-            
-            return size + _tk_sizeof(pw, k->sub);
-        }
-        
-        kptr = k->sub;
-    }
-    
-    return size;
-}
-
-/*
- st_ptr root;
- root.pg = pw; // setup->dest;
- root.key = copy->sub; // *link; // (ushort) ((char*) copy - (char*) pw);
- root.offset = 0;
- st_prt_page_showsub(&root, 1);
- */
-
-static uint _tk_cut_key2(struct _tk_setup* setup, page* pw, key* copy, int prevpt, int cut_adj, const int size) {
-    int size_remaining = sizeof(struct ptr);
-    int next = prevpt? GOOFF(pw, prevpt)->next : copy->sub;
-    
-    const int overflow = 8 * (size - setup->halfsize_byte * 2);
-    
-    if (overflow > 0) {
-        key* nxtnxt = GOOFF(pw, next);
-        
-        if (next && nxtnxt->offset < overflow) {
-            uint size_left = size;
-            
-            // step forward (cut a branch)
-            prevpt = next;
-            next = nxtnxt->next;
-            cut_adj = nxtnxt->offset;
-            
-        } else {
-            // cut a large key to bring down size
-            size_remaining += overflow / 8;
-            cut_adj += overflow;
-        }
+static uint _tk_cut(struct _tk_setup* setup, page* pg, key* copy, ushort* from, uint cut_at, uint size) {
+    if (size < setup->halfsize_byte) {
+        return size;
     }
     
     // get a fresh page
     setup->dest = setup->t->ps->new_page(setup->t->psrc_data);
     
-    // start compact-copy
-    _tk_root_copy(setup->dest, pw, copy, next, cut_adj);
     setup->o_pt = 0;
     
-    assert(setup->dest->used <= setup->dest->size);
+    // start compact-copy
+    _tk_root_copy(setup, pg, copy, *from, cut_at);
     
-	// cut-off 'copy'
-	copy->length = cut_adj;
+    // cut-off 'copy'
+    copy->length = cut_at;
     
-	// link ext-pointer to new page
-    ushort link = _tk_link_and_create_page(setup, pw, cut_adj);
-    if (prevpt) {
-        // prev might have changed: recreate pointer
-        key* prev = GOOFF(pw, prevpt);
-        prev->next = link;
-    } else {
-        copy->sub = link;
-    }
-    
-	return size_remaining;
+    // link ext-pointer to new page
+    *from = _tk_link_and_create_page(setup, pg, cut_at);
+
+    return sizeof(ptr);
 }
 
-static uint _tk_measure_2(struct _tk_setup* setup, page* pw, key* parent, ushort kptr) {
-    uint size = 0;
+static uint _tk_measure(struct _tk_setup* setup, page* pg, key* parent, key* k) {
+    uint next_size = k->next ? _tk_measure(setup, pg, parent, GOOFF(pg, k->next)) : 0;
+
+    // reduce parent and set k->next
+    next_size = _tk_cut(setup, pg, parent, &k->next, k->offset + 1, next_size);
     
-    if (kptr) {
-        key* k = GOOFF(pw,kptr);
-        size = _tk_measure_2(setup, pw, parent, k->next);
-        k = GOOFF(pw,kptr);
+    if (ISPTR(k)) {
+        ptr* pt = (ptr*) k;
         
-        if (size + sizeof(key) + CEILBYTE(parent->length - k->offset) > setup->halfsize_byte) {
-            // cut parent above k
-            size = _tk_cut_key2(setup, pw, parent, kptr, k->offset + 1, size);
-            
-            // k might change if this is a ptr.
-            k = GOOFF(pw,kptr);
-        }
+        return next_size + (pt->koffset ? _tk_measure(setup, pt->pg, parent, GOOFF(pt->pg, pt->koffset)) : sizeof(ptr));
+    } else {
+        uint k_size = k->sub ? _tk_measure(setup, pg, k, GOOFF(pg, k->sub)) : 0;
+
+        k_size += sizeof(key) + CEILBYTE(k->length);
         
-        if (ISPTR(k)) {
-            const ptr* pt = (ptr*) k;
-            if (pt->koffset) {
-                return size + _tk_measure_2(setup, pt->pg, parent, pt->koffset);
-            } else {
-                return size + sizeof(ptr);
-            }
-        } else if (k->length) {
-            const uint subsize = _tk_measure_2(setup, pw, k, k->sub);
-            uint nsize = subsize + 1 + sizeof(key) + CEILBYTE(k->length);
-            
-            if (nsize > setup->halfsize_byte) {
-                // cut k below sub
-                nsize = _tk_cut_key2(setup, pw, k, 0, 0, subsize);
-            }
-            
-            size += nsize;
-        }
+        return next_size + _tk_cut(setup, pg, k, &k->sub, 0, k_size);
     }
-    
-    return size;
 }
 
 static ushort _cmt_find_ptr(page* cpg, page* find, ushort koff) {
@@ -352,16 +288,14 @@ int cmt_commit_task(task* t) {
         setup.size_byte = root->size - sizeof(page);
         
         k = GOKEY(root, sizeof(page));
-        int nsize = _tk_measure_2(&setup, root, k, k->sub);
-        
-        assert(nsize < setup.halfsize_byte * 2);
+        assert(!ISPTR(k));
+        _tk_measure(&setup, root, k, GOOFF(root, k->sub));
         
         // reset and copy remaining rootpage
         setup.dest = t->ps->new_page(t->psrc_data);
         
         k = GOKEY(root, sizeof(page));
-        _tk_root_copy(setup.dest, root, k, k->sub, 0);
-        
+        _tk_root_copy(&setup, root, k, k->sub, 0);
         
         // avoid ptr-only-root-page problem
         k = GOKEY(setup.dest, sizeof(page));

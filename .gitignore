@@ -2,7 +2,7 @@
 *.o
 .project
 .cproject
-
+/.*
 # exes
 cle_core/cle_cli
 test_clerk/test_clerk
